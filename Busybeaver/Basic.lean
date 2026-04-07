@@ -22,12 +22,16 @@ deriving DecidableEq
 
 instance : Inhabited (GStmt State Symbol) := ⟨.halt⟩
 
-structure GConfig (State Symbol : Type _) [BlankSymbol Symbol] where
+namespace TM
+
+namespace Generic
+
+structure Config (State Symbol : Type _) [BlankSymbol Symbol] where
   state : State
   tape : Turing.Tape Symbol
 
 instance [BlankSymbol Symbol] [DecidableEq State] [DecidableEq Symbol] :
-    DecidableEq (GConfig State Symbol) := by
+    DecidableEq (Config State Symbol) := by
   unfold DecidableEq
   intro a b
   obtain ⟨sa, ta⟩ := a
@@ -35,34 +39,71 @@ instance [BlankSymbol Symbol] [DecidableEq State] [DecidableEq Symbol] :
   simp_all
   apply instDecidableAnd
 
-class GMachine (Machine : Type _) (State Symbol : Type _) where
-  trans : Machine → State → Symbol → GStmt State Symbol
+end Generic
 
-namespace GMachine
+inductive StepOutcome (Cfg : Type _)
+| continue : Cfg → StepOutcome Cfg
+| halted : Cfg → StepOutcome Cfg
+deriving DecidableEq
 
-variable {Machine State Symbol : Type _}
+structure StepResult (Cfg : Type _) where
+  baseSteps : Nat
+  outcome : StepOutcome Cfg
 
-def step [GMachine Machine State Symbol] [BlankSymbol Symbol]
-    (M : Machine) (orig : GConfig State Symbol) : Option (GConfig State Symbol) :=
-  match GMachine.trans M orig.state orig.tape.head with
-  | .halt => none
-  | .next sym dir state => some { state, tape := orig.tape.write sym |>.move dir }
+end TM
 
-def eval [GMachine Machine State Symbol] [BlankSymbol Symbol]
-    (M : Machine) (bound : ℕ) (orig : GConfig State Symbol) : Option (GConfig State Symbol) :=
-  match bound with
-  | 0 => orig
-  | n + 1 => step M orig >>= eval M n
+universe u v w
 
-def LastState [GMachine Machine State Symbol] [BlankSymbol Symbol]
-    (M : Machine) (σ : GConfig State Symbol) : Bool :=
-  step M σ |>.isNone
+namespace TM
 
-def init [GMachine Machine State Symbol] [InitialState State] [BlankSymbol Symbol] :
-    GConfig State Symbol :=
+class Model (Machine : Type u) where
+  State : Type v
+  Symbol : Type w
+  instDecEqState : DecidableEq State
+  instDecEqSymbol : DecidableEq Symbol
+  instBlankSymbol : BlankSymbol Symbol
+  instInitialState : InitialState State
+  step : Machine → TM.Generic.Config State Symbol → TM.StepResult (TM.Generic.Config State Symbol)
+  step_zero_iff :
+    ∀ M C, (step M C).baseSteps = 0 ↔ (step M C).outcome = .halted C
+
+attribute [reducible, instance] Model.instDecEqState Model.instDecEqSymbol
+attribute [reducible, instance] Model.instBlankSymbol Model.instInitialState
+
+namespace Model
+
+abbrev Config (M : Type _) [TM.Model M] :=
+  TM.Generic.Config (TM.Model.State M) (TM.Model.Symbol M)
+
+def init (M : Type _) [TM.Model M] : Config M :=
   ⟨initial, default⟩
 
-end GMachine
+def LastConfig {M : Type _} [TM.Model M] (m : M) (C : Config M) : Prop :=
+  (TM.Model.step m C).outcome = .halted C
+
+def StepRel {M : Type _} [TM.Model M] (m : M) (k : Nat) (A B : Config M) : Prop :=
+  TM.Model.step m A = ⟨k, .continue B⟩
+
+def SegmentHaltRel {M : Type _} [TM.Model M] (m : M) (k : Nat) (A B : Config M) : Prop :=
+  TM.Model.step m A = ⟨k, .halted B⟩
+
+def eval (M : Type _) [TM.Model M] (m : M) (bound : Nat) (orig : Config M) :
+    Option (Config M) :=
+  match bound with
+  | 0 => orig
+  | n + 1 =>
+      match TM.Model.step m orig with
+      | ⟨_, .continue next⟩ => eval M m n next
+      | ⟨_, .halted _⟩ => none
+
+def LastState {M : Type _} [TM.Model M] (m : M) (C : Config M) : Bool :=
+  match TM.Model.step m C with
+  | ⟨_, .halted _⟩ => true
+  | ⟨_, .continue _⟩ => false
+
+end Model
+
+end TM
 
 abbrev Label (l: ℕ) := Fin (l + 1)
 instance: Fintype (Label l) := inferInstance
@@ -336,15 +377,24 @@ instance Machine.inhabited: Inhabited $ Machine l s := ⟨{
   wf := Array.size_replicate
 }⟩
 
-instance : GMachine (Machine l s) (Label l) (Symbol s) where
-  trans M lab sym :=
-    match M.get lab sym with
-    | .halt => .halt
-    | .next write dir nextState => .next write dir nextState
-
 @[simp]
 lemma Machine.default_all_halt {l s: ℕ} {lab : Label l} {sym : Symbol s}:
   (default: Machine l s).get lab sym = .halt := by simp [default, Machine.get]
+
+instance : TM.Model (Machine l s) where
+  State := Label l
+  Symbol := Symbol s
+  instDecEqState := inferInstance
+  instDecEqSymbol := inferInstance
+  instBlankSymbol := inferInstance
+  instInitialState := inferInstance
+  step M orig :=
+    match M.get orig.state orig.tape.head with
+    | .halt => ⟨0, .halted orig⟩
+    | .next sym dir state =>
+        ⟨1, .continue { state, tape := orig.tape.write sym |>.move dir }⟩
+  step_zero_iff M C := by
+    cases h : M.get C.state C.tape.head <;> simp
 
 instance Stmt.fintype: Fintype $ Stmt l s := by {
   suffices equiv: Option (Symbol s × Turing.Dir × Label l) ≃ Stmt l s by {
@@ -431,7 +481,7 @@ lemma Machine.ext {M M': Machine l s}: (∀ lab sym, M.get lab sym = M'.get lab 
 
 instance Config.inhabited : Inhabited (Config l s) := ⟨⟨default, default⟩⟩
 
--- TODO: Remove this in favor GMachine.step
+-- TODO: Remove this in favor TM.Model.step
 def Machine.step (M : Machine l s) (orig : Config l s) : Option (Config l s) :=
   match M.get orig.state orig.tape.head with
   | .halt => none
@@ -446,10 +496,11 @@ def Machine.LastState (M : Machine l s) (σ : Config l s) : Bool := M.step σ |>
 
 def init : Config l s := default
 
-lemma Machine.step_eq_gstep (M : Machine l s) (orig : Config l s) :
+lemma Machine.step_eq_model_step (M : Machine l s) (orig : Config l s) :
     M.step orig =
-      (GMachine.step M ⟨orig.state, orig.tape⟩ |>.map
-        (fun cfg : GConfig (Label l) (Symbol s) ↦ (⟨cfg.state, cfg.tape⟩ : Config l s))) := by
-  cases h : M.get orig.state orig.tape.head <;> simp [Machine.step, GMachine.step, GMachine.trans, h]
+      match TM.Model.step M ⟨orig.state, orig.tape⟩ with
+      | ⟨_, .continue cfg⟩ => some ⟨cfg.state, cfg.tape⟩
+      | ⟨_, .halted _⟩ => none := by
+  cases h : M.get orig.state orig.tape.head <;> simp [Machine.step, TM.Model.step, h]
 
 end TM
