@@ -6,6 +6,8 @@ import Busybeaver.Parse
 Generates a time diagram for a TM as an SVG.
 -/
 
+-- TODO: Move SpaceTimeDiagram to Busybeaver/Utils/SpaceTimeDiagram.lean
+
 open TM.Table
 
 namespace SVG

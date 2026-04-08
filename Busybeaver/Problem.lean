@@ -193,6 +193,7 @@ by induction S using Finset.induction with
 
 end Busybeaver'
 
+-- Main definition of the busy beaver function in terms of number of labels and states
 noncomputable def Busybeaver (l s: ℕ) := Busybeaver' l s Finset.univ
 
 namespace Busybeaver

@@ -1,6 +1,7 @@
 /-
 Parsing machines in standard format for convenience.
 -/
+-- TODO: Move Parse.lean into TM/Table/Parse.lean as it is particular to tabular machines.
 import Busybeaver.TM.Table
 import Std.Internal.Parsec.String
 

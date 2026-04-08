@@ -1,4 +1,4 @@
--- TODO: Remove this and keep only Busybeaver.TM.Reachability
+-- TODO: Remove this and keep only Busybeaver.TM.Model.Reachability
 import Busybeaver.TM.Table
 
 namespace TM.Table
