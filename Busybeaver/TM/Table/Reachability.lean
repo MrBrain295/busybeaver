@@ -1,6 +1,5 @@
 -- TODO: Remove this and keep only Busybeaver.TM.Reachability
 import Busybeaver.TM.Table
-import Busybeaver.TM.Reachability
 
 namespace TM.Table
 

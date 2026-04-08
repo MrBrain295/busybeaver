@@ -6,7 +6,7 @@ A transition is a pair (label, symbol).
 
 -- TODO: Rewrite in terms of TM.Model rather than TM.Machine
 import Busybeaver.TM.Table
-import Busybeaver.Reachability
+import Busybeaver.TM.Table.Reachability
 
 namespace TM.Table
 

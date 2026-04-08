@@ -1,6 +1,6 @@
 -- TODO: Rewrite Decider in terms of Model rather than Machine
 import Busybeaver.TM.Table
-import Busybeaver.Reachability
+import Busybeaver.TM.Table.Reachability
 
 /-!
 Core search algorithm for `NGramCPS`.

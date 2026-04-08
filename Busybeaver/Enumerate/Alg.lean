@@ -1,9 +1,9 @@
 import Busybeaver.TM.Table
-import Busybeaver.Reachability
+import Busybeaver.TM.Table.Reachability
 
 import Busybeaver.Transition
 
-import Busybeaver.ClosedSet
+import Busybeaver.TM.Table.ClosedSet
 import Busybeaver.Enumerate.Child
 import Busybeaver.Enumerate.Basic
 import Busybeaver.Enumerate.Symmetry

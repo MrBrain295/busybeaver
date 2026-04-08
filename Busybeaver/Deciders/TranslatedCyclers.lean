@@ -6,7 +6,7 @@ the tape. Using that we can define the "extended transcripts" used in the blog p
 -/
 -- TODO: Rewrite in terms of TM.Model rather than TM.Machine
 import Busybeaver.TM.Table
-import Busybeaver.Reachability
+import Busybeaver.TM.Table.Reachability
 
 namespace TM.Table
 

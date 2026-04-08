@@ -9,9 +9,8 @@ by two goals:
 -/
 -- TODO: Rewrite in terms of TM.Model rather than TM.Machine
 import Busybeaver.TM.Table
--- import Busybeaver.TM.Reachability
 import Busybeaver.Basic
-import Busybeaver.Reachability
+import Busybeaver.TM.Table.Reachability
 
 variable {M: TM.Table.Machine L S}
 

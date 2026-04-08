@@ -4,8 +4,8 @@ _finite_ subtape from the orinal configuration that is enough to emulate the seq
 -/
 
 import Busybeaver.Basic
-import Busybeaver.ClosedSet
-import Busybeaver.Reachability
+import Busybeaver.TM.Table.ClosedSet
+import Busybeaver.TM.Table.Reachability
 import Busybeaver.Partial
 
 namespace TM
@@ -748,7 +748,7 @@ lemma le_infinite_right {Lb: Turing.ListBlank Γ}: .finite L ≤ PartialHTape.in
 lemma le_cons {g: Γ} {Lb Lb': PartialHTape Γ} (h: Lb ≤ Lb'): cons g Lb ≤ cons g Lb' :=
   by cases Lb <;> cases Lb' <;> simp_all
 
-lemma le_tail {Lb Lb': PartialHTape Γ} (h: Lb ≤ Lb'): Lb.tail ≤ Lb'.tail := 
+lemma le_tail {Lb Lb': PartialHTape Γ} (h: Lb ≤ Lb'): Lb.tail ≤ Lb'.tail :=
 by {
   cases Lb <;> cases Lb' <;> simp_all [tail]
   · rename_i L L'
@@ -866,7 +866,7 @@ by {
 }
 
 lemma le_head? (hg: T.head? = some g): T'.head? = some g :=
-by match T, T' with 
+by match T, T' with
 | .infinite _, .finite _ => simp [instPartialOrder, is_preffix] at h
 | .infinite _, .infinite _ => {
   simp [head?] at *

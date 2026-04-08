@@ -1,5 +1,5 @@
 import Busybeaver.TM.Table
-import Busybeaver.Reachability
+import Busybeaver.TM.Table.Reachability
 import Busybeaver.Problem
 
 open TM.Table

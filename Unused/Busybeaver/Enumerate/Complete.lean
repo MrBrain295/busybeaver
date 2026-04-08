@@ -1,5 +1,5 @@
 import Busybeaver.Basic
-import Busybeaver.Reachability
+import Busybeaver.TM.Table.Reachability
 import Busybeaver.Enumerate.ZVisits
 import Busybeaver.Enumerate.Symmetry
 

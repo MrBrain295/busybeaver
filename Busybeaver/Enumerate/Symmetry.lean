@@ -4,7 +4,7 @@ Symmetries are the swap of left and right in the TM
 M and M.symm are obviously equi-halting.
 -/
 import Busybeaver.TM.Table
-import Busybeaver.Reachability
+import Busybeaver.TM.Table.Reachability
 import Busybeaver.Enumerate.Basic
 
 def Turing.Tape.reverse [Inhabited Γ] (T: Turing.Tape Γ): Turing.Tape Γ := {T with left := T.right, right := T.left}

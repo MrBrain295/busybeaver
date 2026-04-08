@@ -6,12 +6,12 @@ Definitions are inspired by busycoq.
 
 import Mathlib.Tactic.Linarith
 import Busybeaver.Basic
-import Busybeaver.Reachability
+import Busybeaver.TM.Table.Reachability
 import Busybeaver.Enumerate.Basic
 import Busybeaver.Enumerate.Perm
 
 -- Used when build the set of ZVisit states
-import Busybeaver.ClosedSet
+import Busybeaver.TM.Table.ClosedSet
 
 namespace TM
 

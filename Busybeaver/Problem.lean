@@ -2,7 +2,7 @@
 Definition and lemmas about the Busy beaver problem
 -/
 import Busybeaver.TM.Table
-import Busybeaver.Reachability
+import Busybeaver.TM.Table.Reachability
 namespace TM
 
 open TM.Table

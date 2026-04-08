@@ -1,4 +1,4 @@
-import Busybeaver.ClosedSet
+import Busybeaver.TM.Table.ClosedSet
 import Busybeaver.Deciders.NGramCPS.BaseProgress
 import Busybeaver.Deciders.NGramCPS.FinalStateLemmas
 
