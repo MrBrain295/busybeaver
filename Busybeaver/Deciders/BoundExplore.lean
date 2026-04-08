@@ -26,3 +26,11 @@ def boundedExplore (bound: ℕ) (M: Machine l s): HaltM M { s // default -[M]{bo
     rw [← hk, Nat.add_comm k, Nat.add_assoc]
   })
   boundedExploreCore bound (by rfl) ⟨init, Machine.Multistep.refl⟩
+
+namespace Deciders.BoundExplore
+
+variable {M : Type _} [TM.Model M]
+
+-- def boundExplore' (bound : ℕ) (m : M) :
+
+end Deciders.BoundExplore

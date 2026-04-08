@@ -17,6 +17,7 @@ variable {M: TM.Table.Machine L S}
 structure ClosedSet (M: TM.Table.Machine L S) (base: TM.Table.Config L S → Prop) (I: TM.Table.Config L S) where
   closed : ∀ (A: {S // base S}), ∃ (B: {S // base S}), A -[M]->+ B
   enters : ∃ (N: {S // base S}), I -[M]->* N
+
 namespace ClosedSet
 
 def offset (closed: ClosedSet M p I) (hN: p N): ClosedSet M p N :=
