@@ -1,4 +1,4 @@
-import Busybeaver.Basic
+import Busybeaver.TM.Machine
 import Busybeaver.Reachability
 import Busybeaver.Enumerate.Basic
 

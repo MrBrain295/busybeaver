@@ -4,7 +4,8 @@ This file defines _transitions_ and their properties.
 A transition is a pair (label, symbol).
 -/
 
-import Busybeaver.Basic
+-- TODO: Rewrite in terms of TM.Model rather than TM.Machine
+import Busybeaver.TM.Machine
 import Busybeaver.Reachability
 
 namespace TM

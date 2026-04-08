@@ -4,7 +4,8 @@ Translated cycler decider based on [transcripts](https://www.sligocki.com/2024/0
 The idea is to have a tape that records the fact that a machine is on one of the "trailing zeros" of
 the tape. Using that we can define the "extended transcripts" used in the blog post.
 -/
-import Busybeaver.Basic
+-- TODO: Rewrite in terms of TM.Model rather than TM.Machine
+import Busybeaver.TM.Machine
 import Busybeaver.Reachability
 
 namespace TM
