@@ -1,4 +1,3 @@
--- TODO: Move to Busybeaver/Model/Reachability.lean
 import Busybeaver.Basic
 
 namespace TM.Model
@@ -75,55 +74,24 @@ lemma to_base {m : M} (hAB : A -[m]{i}->' B) : ∃ n, A -[m]{n}->>' B := by
 
 end Multistep
 
--- def StepRel {M : Type _} [TM.Model M] (m : M) (k : Nat) (A B : Config M) : Prop :=
---   TM.Model.step m A = ⟨k, .continue B⟩
+namespace MultistepBase
 
--- def SegmentHaltRel {M : Type _} [TM.Model M] (m : M) (k : Nat) (A B : Config M) : Prop :=
---   TM.Model.step m A = ⟨k, .halted B⟩
+lemma single {m : M} (hAB : StepBase m n A B) : A -[m]{n}->>' B :=
+  .step hAB .refl
 
--- inductive HaltRel (m : M) : Nat → Config M → Config M → Prop
--- | halt {k A B} : SegmentHaltRel m k A B → HaltRel m k A B
--- | step {i j A B C} :
---     StepRel m i A B →
---     HaltRel m j B C →
---     HaltRel m (i + j) A C
+lemma trans {m : M} (hAB : A -[m]{i}->>' B) (hBC : B -[m]{j}->>' C) :
+    A -[m]{i + j}->>' C := by
+  induction hAB with
+  | refl =>
+      simpa using hBC
+  | step hAB hBD IH =>
+      simpa [Nat.add_assoc] using MultistepBase.step hAB (IH hBC)
+
+end MultistepBase
 
 def halts_in_base (m : M) (k : Nat) (A : Config M) : Prop := ∃ C, LastState m C ∧ A -[m]{k}->' C
 
 def halts (m : M) (A : Config M) : Prop := ∃ k, halts_in_base m k A
-
--- namespace Multistep
-
--- lemma single {m : M} (hAB : StepRel m k A B) : Multistep m k A B := by
---   exact .step hAB .refl
-
--- lemma trans {m : M} (hAB : Multistep m i A B) (hBC : Multistep m j B C) :
---     Multistep m (i + j) A C := by
---   induction hAB with
---   | refl =>
---       simpa using hBC
---   | @step i j A B D hAB hBD IH =>
---       simpa [Nat.add_assoc] using
---         Multistep.step hAB (IH hBC)
-
--- end Multistep
-
--- namespace HaltRel
-
--- lemma to_halts_in {m : M} (h : HaltRel m k A B) : halts_in m k A := ⟨B, h⟩
-
--- lemma to_halts {m : M} (h : HaltRel m k A B) : halts m A := ⟨k, h.to_halts_in⟩
-
--- lemma trans_multistep {m : M} (hAB : Multistep m i A B) (hBC : HaltRel m j B C) :
---     HaltRel m (i + j) A C := by
---   induction hAB with
---   | refl =>
---       simpa using hBC
---   | @step i j A B D hAB hBD IH =>
---       simpa [Nat.add_assoc] using
---         HaltRel.step hAB (IH hBC)
-
--- end HaltRel
 
 inductive HaltM (m : M) (α : Type _)
 | unknown : α → HaltM m α
@@ -162,8 +130,5 @@ noncomputable def stepH (m : M) (σ : {s // default -[m]{k}->' s}) :
         have hcontinue : σ.val -[m]->' nxt := by
           simp [Step, hstep]
         simpa using Multistep.trans σ.prop (Multistep.single hcontinue)⟩
-
--- abbrev GDecider (M : Type _) [TM.Model M] :=
---   (m : M) → HaltM m Unit
 
 end TM.Model

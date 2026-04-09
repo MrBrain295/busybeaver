@@ -36,13 +36,45 @@ open TM.Model
 
 variable {M : Type _} [TM.Model M]
 
-noncomputable def boundedExplore (bound : ℕ) (m : M) : HaltM m { s // default -[m]{bound}->' s } :=
-    let rec boundedExploreCore (left: ℕ) {k} (hk: left + k = bound) (σ: { s // default -[m]{k}->' s }) :
-    HaltM m { s // default -[m]{bound}->' s } := match left with
-  | 0 => .unknown ⟨σ.val, by {simp at hk; cases hk; exact σ.prop}⟩
-  | n + 1 => stepH m σ >>= boundedExploreCore n (by
-    simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hk)
+private structure ExploreState (m : M) (k b : ℕ) where
+  cfg : Config M
+  multistep : default -[m]{k}->' cfg
+  multistepBase : default -[m]{b}->>' cfg
 
-  boundedExploreCore bound (by simp) ⟨default, Multistep.refl⟩
+def boundedExplore (bound : ℕ) (m : M) : HaltM m { s // default -[m]{bound}->' s } :=
+    let rec boundedExploreCore (left : ℕ) {k b}
+        (hk : left + k = bound) (σ : ExploreState m k b) :
+        HaltM m { s // default -[m]{bound}->' s } := match left with
+    | 0 => .unknown ⟨σ.cfg, by
+        simp at hk
+        cases hk
+        exact σ.multistep⟩
+    | n + 1 =>
+        match hstep : TM.Model.step m σ.cfg with
+        | ⟨dn, .halted _⟩ =>
+            .halts_prf b σ.cfg <| by
+              constructor
+              · simp [TM.Model.LastState, hstep]
+              · exact σ.multistepBase
+        | ⟨dn, .continue nxt⟩ =>
+            let σ' : ExploreState m (k + 1) (b + dn) := {
+              cfg := nxt
+              multistep := by
+                have hcontinue : σ.cfg -[m]->' nxt := by
+                  simp [Step, hstep]
+                simpa using Multistep.trans σ.multistep (Multistep.single hcontinue)
+              multistepBase := by
+                have hbase : StepBase m dn σ.cfg nxt := by
+                  simp [StepBase, hstep]
+                simpa using MultistepBase.trans σ.multistepBase (MultistepBase.single hbase)
+            }
+            boundedExploreCore n (by
+              simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hk) σ'
+
+    boundedExploreCore bound (by simp) {
+      cfg := default
+      multistep := Multistep.refl
+      multistepBase := MultistepBase.refl
+    }
 
 end Deciders.BoundExplore

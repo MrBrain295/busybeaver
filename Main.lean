@@ -15,9 +15,68 @@ instance: ToString (HaltM M α) where
   | .loops_prf _ => "loops"
   | .halts_prf n _ _ => s!"halts in {n + 1}"
 
-def compute (l s: ℕ) (dec: (M: Machine l s) → HaltM M Unit): Busybeaver.BBResult l s :=
-  let res0 := Busybeaver.BBCompute dec (Busybeaver.BBCompute.m0RB l s)
-  let res1 := Busybeaver.BBCompute dec (Busybeaver.BBCompute.m1RB l s)
+instance {M : Type _} [TM.Model M] {m : M} : ToString (TM.Model.HaltM m α) where
+  toString := λ
+  | .unknown _ => s!"unknown"
+  | .loops_prf _ => "loops"
+  | .halts_prf n _ _ => s!"halts in {n + 1}"
+
+private lemma modelStepBase_to_tableStep
+    {l s : ℕ} {M : Machine l s}
+    {n : ℕ} {A B : TM.Model.Config (Machine l s)}
+    (h : TM.Model.StepBase M n A B) :
+    n = 1 ∧ (⟨A.state, A.tape⟩ : Config l s) -[M]-> (⟨B.state, B.tape⟩ : Config l s) := by
+  unfold TM.Model.StepBase at h
+  cases hget : M.get A.state A.tape.head with
+  | halt =>
+      simp [TM.Model.step, hget] at h
+  | next sym dir state =>
+      simp [TM.Model.step, hget] at h
+      rcases h with ⟨rfl, rfl⟩
+      constructor
+      · rfl
+      · simp [Machine.step, hget]
+
+private lemma modelLastState_to_tableLastState
+    {l s : ℕ} {M : Machine l s}
+    {C : TM.Model.Config (Machine l s)}
+    (h : TM.Model.LastState M C) :
+    M.LastState (⟨C.state, C.tape⟩ : Config l s) := by
+  cases hget : M.get C.state C.tape.head with
+  | halt =>
+      simp [Machine.LastState, Machine.step, hget]
+  | next sym dir state =>
+      simp [TM.Model.LastState, TM.Model.step, hget] at h
+
+private lemma modelMultistepBase_to_tableMultistep
+    {l s : ℕ} {M : Machine l s}
+    {n : ℕ} {A B : TM.Model.Config (Machine l s)}
+    (h : A -[M]{n}->>' B) :
+    (⟨A.state, A.tape⟩ : Config l s) -[M]{n}-> (⟨B.state, B.tape⟩ : Config l s) := by
+  induction h with
+  | refl =>
+      exact .refl
+  | step hAB hBC IH =>
+      obtain ⟨hn, hAB'⟩ := modelStepBase_to_tableStep hAB
+      cases hn
+      simpa [Nat.add_comm, Nat.add_left_comm, Nat.add_assoc] using Machine.Multistep.succ hAB' IH
+
+private def modelHaltMToTableHaltM
+    {l s : ℕ} {M : Machine l s} :
+    TM.Model.HaltM M Unit → HaltM M Unit
+  | .unknown _ => .unknown ()
+  | .halts_prf n C h =>
+      .halts_prf n ⟨C.state, C.tape⟩ <| by
+        rcases h with ⟨hLast, hReach⟩
+        constructor
+        · exact modelLastState_to_tableLastState hLast
+        · exact modelMultistepBase_to_tableMultistep hReach
+  | .loops_prf _ => .unknown ()
+
+def compute (l s: ℕ) (dec: (M: Machine l s) → TM.Model.HaltM M Unit): Busybeaver.BBResult l s :=
+  let tableDec := fun M => modelHaltMToTableHaltM (dec M)
+  let res0 := Busybeaver.BBCompute tableDec (Busybeaver.BBCompute.m0RB l s)
+  let res1 := Busybeaver.BBCompute tableDec (Busybeaver.BBCompute.m1RB l s)
   Busybeaver.BBResult.join res0 res1
 
 section DeciderCombinator
@@ -49,14 +108,20 @@ def DeciderConfig.decider (cfg: DeciderConfig) (M: Machine l s): HaltM M Unit :=
 | .backwardsReasoning n => backwardsReasoningDecider n M
 | .nGramCPS cfg => nGramCPSDecider cfg M
 
-@[inline]
-def toDecider (cfg: List DeciderConfig) (M: Machine l s): HaltM M Unit := do
-  for d in cfg do
-    d.decider M
+def DeciderConfig.deciderModel {M : Type _} [TM.Model M] (cfg: DeciderConfig) (m : M) :
+    TM.Model.HaltM m Unit := match cfg with
+| .explore n => do
+    let _ ← Deciders.BoundExplore.boundedExplore n m
+| _ => .unknown ()
 
-def toLogDecider (cfg: List DeciderConfig) (quiet: Bool) (M: Machine l s): HaltM M Unit := do
+@[inline]
+def toDecider (cfg: List DeciderConfig) (M: Machine l s): TM.Model.HaltM M Unit := do
+  for d in cfg do
+    d.deciderModel M
+
+def toLogDecider (cfg: List DeciderConfig) (quiet: Bool) (M: Machine l s): TM.Model.HaltM M Unit := do
   let res := toDecider cfg M
-  if !quiet && !res.decided then
+  if !quiet && !TM.Model.HaltM.decided res then
     dbg_trace s!"{repr M} {res}"
   res
 
@@ -67,6 +132,7 @@ def configFromFile (path: String): IO (Option <| List DeciderConfig) := do
   return done
 
 def defaultConfig: List DeciderConfig := [
+  .explore 100,
   .translatedCycler 300,
   .cycler 300,
   .backwardsReasoning 30,
@@ -107,7 +173,7 @@ def runCheckCmd (p: Parsed): IO UInt32 := do
   let cfg ← determineConfig ((p.flag? "config").map (Parsed.Flag.as! · String))
 
   for d in cfg do
-    let res := d.decider M
+    let res := d.deciderModel M
     IO.println s!"{d}: {res}"
 
   return 0
