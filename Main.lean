@@ -101,17 +101,11 @@ instance: ToString DeciderConfig where
   | .backwardsReasoning n => s!"Backwards Reasoning {n}"
   | .nGramCPS cfg => s!"NGram CPS n={cfg.n} bound={cfg.bound}"
 
-def DeciderConfig.decider (cfg: DeciderConfig) (M: Machine l s): HaltM M Unit := match cfg with
-| .translatedCycler n => do let _ ← translatedCyclerDecider n M
-| .cycler n => looperDecider n M
-| .explore n => do let _ ← boundedExplore n M
-| .backwardsReasoning n => backwardsReasoningDecider n M
-| .nGramCPS cfg => nGramCPSDecider cfg M
-
 def DeciderConfig.deciderModel {M : Type _} [TM.Model M] (cfg: DeciderConfig) (m : M) :
     TM.Model.HaltM m Unit := match cfg with
 | .explore n => do
     let _ ← Deciders.BoundExplore.boundedExplore n m
+| .cycler n => Deciders.Cyclers.looperDecider n m
 | _ => .unknown ()
 
 @[inline]

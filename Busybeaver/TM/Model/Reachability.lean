@@ -46,6 +46,12 @@ namespace Multistep
 lemma single {m : M} (hAB : A -[m]->' B) : A -[m]{1}->' B :=
   .step hAB .refl
 
+lemma single' {m : M} (h : A -[m]{1}->' B) : A -[m]->' B := by
+  cases h with
+  | step hAB hBC =>
+      cases hBC
+      exact hAB
+
 lemma trans {m : M} (hAB : A -[m]{i}->' B) (hBC : B -[m]{j}->' C) :
     A -[m]{i + j}->' C := by
   induction hAB with
@@ -71,6 +77,48 @@ lemma to_base {m : M} (hAB : A -[m]{i}->' B) : ∃ n, A -[m]{n}->>' B := by
       obtain ⟨n₁, hn₁⟩ := step_to_base hAB
       obtain ⟨n₂, hn₂⟩ := IH
       exact ⟨n₁ + n₂, MultistepBase.step hn₁ hn₂⟩
+
+lemma deterministic {m : M} (hB : A -[m]{n}->' B) (hC : A -[m]{n}->' C) : B = C := by
+  induction hB generalizing C with
+  | refl =>
+      cases hC
+      rfl
+  | step hAB hBC IH =>
+      cases hC with
+      | step hAC hCC =>
+          unfold Step at hAB hAC
+          rw [hAC] at hAB
+          cases hAB
+          exact IH hCC
+
+lemma split {m : M} (h : A -[m]{n + k}->' B) : ∃ D : Config M, (A -[m]{n}->' D) ∧ (D -[m]{k}->' B) := by
+  induction n generalizing A B with
+  | zero =>
+      exact ⟨A, .refl, by simpa using h⟩
+  | succ n IH =>
+      have h' : A -[m]{Nat.succ (n + k)}->' B := by
+        simpa [Nat.succ_eq_add_one, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using h
+      cases h' with
+      | step hAX hXB =>
+          obtain ⟨D, hXD, hDB⟩ := IH hXB
+          exact ⟨D, .step hAX hXD, hDB⟩
+
+lemma split_le {m : M} (hB : A -[m]{n}->' B) (hC : A -[m]{k}->' C) (hk : k ≤ n) :
+    C -[m]{n - k}->' B := by
+  obtain ⟨D, hAD, hDB⟩ := split (n := k) (k := n - k) (by
+    simpa [Nat.add_sub_of_le hk] using hB)
+  have hEq : D = C := deterministic hAD hC
+  simpa [hEq] using hDB
+
+lemma split_add {m : M} (hB : A -[m]{n}->' B) (hC : A -[m]{n + k}->' C) : B -[m]{k}->' C :=
+  by simpa [Nat.add_sub_cancel_left] using split_le hC hB (Nat.le_add_right n k)
+
+lemma to_evstep {m : M} (h : A -[m]{n}->' B) : A -[m]->*' B := by
+  induction h with
+  | refl =>
+      exact .refl
+  | step hAB hBC IH =>
+      exact .step hAB IH
 
 end Multistep
 
@@ -115,6 +163,107 @@ def decided : HaltM m α → Bool
 | _ => true
 
 end HaltM
+
+namespace Progress
+
+lemma trans {m : M} (hA : A -[m]->+' B) (hB : B -[m]->+' C) : A -[m]->+' C := by
+  induction hA with
+  | single h =>
+      exact .step h hB
+  | step hAB hBC IH =>
+      exact .step hAB (IH hB)
+
+lemma to_multistep {m : M} (h : A -[m]->+' B) : ∃ n, A -[m]{n + 1}->' B := by
+  induction h with
+  | single h =>
+      exact ⟨0, Multistep.single h⟩
+  | step hAB hBC IH =>
+      obtain ⟨n, hn⟩ := IH
+      exact ⟨n + 1, by simpa [Nat.add_assoc] using Multistep.step hAB hn⟩
+
+lemma from_multistep {m : M} (h : A -[m]{n + 1}->' B) : A -[m]->+' B := by
+  induction n generalizing A with
+  | zero =>
+      exact .single (Multistep.single' h)
+  | succ n IH =>
+      cases h with
+      | step hAB hBC =>
+          exact trans (.single hAB) (IH hBC)
+
+end Progress
+
+namespace Machine.EvStep
+
+lemma trans {m : M} (hA : A -[m]->*' B) (hB : B -[m]->*' C) : A -[m]->*' C := by
+  induction hA with
+  | refl =>
+      exact hB
+  | step hAB hBC IH =>
+      exact .step hAB (IH hB)
+
+lemma to_multistep {m : M} (h : A -[m]->*' B) : ∃ n, A -[m]{n}->' B := by
+  induction h with
+  | refl =>
+      exact ⟨0, .refl⟩
+  | step hAB hBC IH =>
+      obtain ⟨n, hn⟩ := IH
+      exact ⟨n + 1, .step hAB hn⟩
+
+lemma trans_progress {m : M} (hA : A -[m]->*' B) (hB : B -[m]->+' C) : A -[m]->+' C := by
+  induction hA with
+  | refl =>
+      exact hB
+  | step hAB hAC IH =>
+      exact .step hAB (IH hB)
+
+end Machine.EvStep
+
+namespace halts_in_base
+
+lemma no_multistep {m : M} (hM : LastState m A) : ¬(A -[m]{n + 1}->' C) := by
+  intro hAC
+  cases hstep : TM.Model.step m A with
+  | mk dn outcome =>
+      cases outcome <;> simp [LastState, hstep] at hM
+      case halted cfg =>
+        cases hAC with
+        | step hAB _ =>
+            unfold Step at hAB
+            simp [hstep] at hAB
+
+lemma no_progress {m : M} (hM : LastState m A) : ¬(A -[m]->+' B) := by
+  intro hAC
+  obtain ⟨n, hn⟩ := Progress.to_multistep hAC
+  exact no_multistep hM hn
+
+lemma evstep_same {m : M} (hM : LastState m A) (h : A -[m]->*' B) : A = B := by
+  obtain ⟨n, hn⟩ := Machine.EvStep.to_multistep h
+  cases n with
+  | zero =>
+      cases hn
+      rfl
+  | succ n =>
+      exact False.elim <| no_multistep hM hn
+
+lemma preceeds {m : M} (hM : halts_in_base m k A) (hAB : A -[m]{n}->' B) (hk : n ≤ k) :
+    halts_in_base m (k - n) B := by
+  obtain ⟨C, hCl, hAC⟩ := hM
+  exact ⟨C, hCl, Multistep.split_le hAC hAB hk⟩
+
+lemma within {m : M} (hM : halts_in_base m k A) (hB : A -[m]{n}->' B) : n ≤ k := by
+  by_contra hk
+  simp at hk
+  obtain ⟨C, hCl, hAC⟩ := hM
+  have hBC := Multistep.split_le hB hAC hk.le
+  have hpos : 0 < n - k := Nat.sub_pos_of_lt hk
+  cases hnk : n - k with
+  | zero =>
+      simp [hnk] at hpos
+  | succ d =>
+      rw [hnk] at hBC
+      exact no_multistep hCl hBC
+
+end halts_in_base
 
 noncomputable def stepH (m : M) (σ : {s // default -[m]{k}->' s}) :
     HaltM m {s' // default -[m]{k + 1}->' s'} :=
