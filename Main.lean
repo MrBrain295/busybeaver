@@ -1,4 +1,3 @@
--- TODO: Simplify this import (don't use everything)
 import Busybeaver
 import Mathlib.Data.Nat.Notation
 import Init.Data.String
@@ -111,7 +110,7 @@ private lemma modelMultistepBase_to_tableMultistep
       simpa [Nat.add_comm, Nat.add_left_comm, Nat.add_assoc] using Machine.Multistep.succ hAB' IH
 
 -- TODO: Move this proof and its dependencies to TM.Table.Model, it is about explaining how
--- a tabular machine is actually a model, and all its relevant API.
+--       a tabular machine is actually a model, and all its relevant API.
 private def modelHaltMToTableHaltM
     {l s : ℕ} {M : Machine l s} :
     TM.Model.HaltM M Unit → HaltM M Unit
@@ -162,6 +161,8 @@ def DeciderConfig.deciderModel {M : Type _} [TM.Model M] (cfg: DeciderConfig) (m
 | .explore n => do
     let _ ← Deciders.BoundExplore.boundedExplore n m
 | .cycler n => Deciders.Cyclers.looperDecider n m
+-- TODO: Bring back backwards reasoning decider
+-- TODO: Bring back nGramCPS decider
 | _ => .unknown ()
 
 @[inline]
@@ -287,7 +288,6 @@ unsafe def computeCmd (p: Parsed): IO UInt32 := do
       }
       IO.println s!"Busybeaver({l + 1}, {s + 1}) = {comp.val + 1}"
     else
-      -- TODO: check BB(l,s) ≥ n
       IO.println s!"#Undec: {Multiset.card comp.undec}"
       IO.println s!"Busybeaver({l + 1}, {s + 1}) ≥ {comp.val + 1}"
       if let some path := p.flag? "output" then

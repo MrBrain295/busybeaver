@@ -153,7 +153,7 @@ Idea:
 private lemma ticking_extends_start_model
     {m : TickingMachine BM} {A B C : TickingConfig BM} {L : List (Tick BM)}
     {q : TM.Model.State BM} {n : Nat}
-    -- Replace this with default -[m]->* A
+    -- TODO: Replace this with (default -[m]->* A) here and everywhere else where the value of `n` is not used or constrained in the hypotheses.
     (hReach : (default : TickingConfig BM) -[m]{n}->>' A)
     (hAB : A t-[m:L]->>' B) (hBC : B t-[m:L]->>' C)
     (hRecord : (q, (⊥ : TickSymbol BM)) ∈ L) :
@@ -183,7 +183,6 @@ Idea:
 - show that the third configuration satisfies the ordinary start constraint, note that its control
   state matches the repeated start state, and replay the transcript from there.
 -/
--- TODO: MarX review this theorem
 private lemma ticking_extends
     {m : TickingMachine BM} {A B C : TickingConfig BM} {L : List (Tick BM)}
     {q : TM.Model.State BM} {n : Nat}
