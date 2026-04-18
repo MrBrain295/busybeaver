@@ -38,6 +38,7 @@ Idea:
 private lemma overlap_current_offset
     {m : TickingMachine BM} {A B C : TickingConfig BM} {L : List (Tick BM)}
     (hAB : A t-[m:L]->>' B) (hBC : B t-[m:L]->>' C) :
+    -- TODO: Rewrite it as a partial tape is a subset of another partial tape.
     ∀ i s,
       startConstraint m L (i + netShift m L) = some s →
       finishConstraint m L i = some s := by
@@ -152,6 +153,7 @@ Idea:
 private lemma ticking_extends_start_model
     {m : TickingMachine BM} {A B C : TickingConfig BM} {L : List (Tick BM)}
     {q : TM.Model.State BM} {n : Nat}
+    -- Replace this with default -[m]->* A
     (hReach : (default : TickingConfig BM) -[m]{n}->>' A)
     (hAB : A t-[m:L]->>' B) (hBC : B t-[m:L]->>' C)
     (hRecord : (q, (⊥ : TickSymbol BM)) ∈ L) :
@@ -181,6 +183,7 @@ Idea:
 - show that the third configuration satisfies the ordinary start constraint, note that its control
   state matches the repeated start state, and replay the transcript from there.
 -/
+-- TODO: MarX review this theorem
 private lemma ticking_extends
     {m : TickingMachine BM} {A B C : TickingConfig BM} {L : List (Tick BM)}
     {q : TM.Model.State BM} {n : Nat}
@@ -250,20 +253,17 @@ private lemma twice_loop
   exact ticking_loops hReach hAC hCB hRecord
 
 theorem twice_suffix_loop
-    {m : TickingMachine BM} {A B : TickingConfig BM} {L L' : List (Tick BM)}
-    {q : TM.Model.State BM} {n : Nat}
-    (hReach : (default : TickingConfig BM) -[m]{n}->>' A)
-    (h : A t-[m:L]->>' B) (hL' : L' ++ L' <:+ L)
+    {m : TickingMachine BM} {A : TickingConfig BM} {L L' : List (Tick BM)}
+    {q : TM.Model.State BM}
+    (h : (default : TickingConfig BM) t-[m:L]->>' A) (hL' : L' ++ L' <:+ L)
     (hRecord : (q, (⊥ : TickSymbol BM)) ∈ L') :
-    ¬TM.Model.halts m A := by
+    ¬TM.Model.halts m (default : TickingConfig BM) := by
   rw [List.suffix_iff_eq_append] at hL'
   rw [← hL'] at h
   obtain ⟨C, hAC, hCB⟩ := TReach.split h
   have hCnothalts : ¬TM.Model.halts m C := by
     obtain ⟨k, hk⟩ := TReach.to_multistepBase hAC
-    have hReachC : (default : TickingConfig BM) -[m]{n + k}->>' C :=
-      TM.Model.MultistepBase.trans hReach hk
-    exact twice_loop hReachC hCB hRecord
+    exact twice_loop hk hCB hRecord
   exact TM.Model.halts.skip (TReach.to_multistep hAC) hCnothalts
 
 end Deciders.TranslatedCyclers
