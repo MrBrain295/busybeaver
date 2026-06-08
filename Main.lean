@@ -137,6 +137,8 @@ open Lean
 
 deriving instance FromJson, ToJson for NGramCPSConfig
 deriving instance FromJson, ToJson for NGramCPSHistoryConfig
+deriving instance FromJson, ToJson for NGramCPSLRUConfig
+deriving instance FromJson, ToJson for RepWLConfig
 
 inductive DeciderConfig where
 | translatedCycler : ℕ → DeciderConfig
@@ -145,6 +147,8 @@ inductive DeciderConfig where
 | backwardsReasoning : ℕ → DeciderConfig
 | nGramCPS : NGramCPSConfig → DeciderConfig
 | nGramCPSHistory : NGramCPSHistoryConfig → DeciderConfig
+| nGramCPSLRU : NGramCPSLRUConfig → DeciderConfig
+| repWL : RepWLConfig → DeciderConfig
 deriving FromJson, ToJson
 
 instance: ToString DeciderConfig where
@@ -156,6 +160,10 @@ instance: ToString DeciderConfig where
   | .nGramCPS cfg => s!"NGram CPS n={cfg.n} bound={cfg.bound}"
   | .nGramCPSHistory cfg =>
       s!"NGram CPS history={cfg.history} left={cfg.left} right={cfg.right} bound={cfg.bound}"
+  | .nGramCPSLRU cfg =>
+      s!"NGram CPS LRU left={cfg.left} right={cfg.right} bound={cfg.bound}"
+  | .repWL cfg =>
+      s!"RepWL len={cfg.len} threshold={cfg.threshold} maxT={cfg.maxT} bound={cfg.bound}"
 
 def DeciderConfig.deciderModel {M : Type _} [TM.Model M] (cfg: DeciderConfig) (m : M) :
     TM.Model.HaltM m Unit := match cfg with
@@ -170,6 +178,8 @@ def DeciderConfig.deciderTable (cfg: DeciderConfig) (M: Machine l s) : HaltM M U
 | .backwardsReasoning n => backwardsReasoningDecider n M
 | .nGramCPS cfg => nGramCPSDecider cfg M
 | .nGramCPSHistory cfg => nGramCPSHistoryDecider cfg M
+| .nGramCPSLRU cfg => nGramCPSLRUDecider cfg M
+| .repWL cfg => Deciders.RepWL.decider cfg M
 | _ => modelHaltMToTableHaltM (cfg.deciderModel M)
 
 @[inline]
@@ -194,22 +204,51 @@ def configFromFile (path: String): IO (Option <| List DeciderConfig) := do
   let .ok done := fromJson? parsed | throw <| IO.userError "Invalid configuration"
   return done
 
-def defaultConfig: List DeciderConfig := [
+def lightDefaultConfig: List DeciderConfig := [
   .explore 130,
-  .translatedCycler 4100,
-  .cycler 4100,
+  .translatedCycler 300,
+  .cycler 300,
+  .nGramCPS { n := 1, bound := 100 },
+  .nGramCPS { n := 2, bound := 200 },
+  .nGramCPS { n := 3, bound := 400 }
+]
+
+def bb3DefaultConfig: List DeciderConfig :=
+  lightDefaultConfig ++ [
+    .nGramCPSHistory { history := 2, left := 2, right := 2, bound := 1600 }
+  ]
+
+def bb4DefaultConfig: List DeciderConfig := [
+  .cycler 107,
   .nGramCPS { n := 1, bound := 100 },
   .nGramCPS { n := 2, bound := 200 },
   .nGramCPS { n := 3, bound := 400 },
   .nGramCPSHistory { history := 2, left := 2, right := 2, bound := 1600 },
-  .backwardsReasoning 30
+  .nGramCPSHistory { history := 2, left := 3, right := 3, bound := 1600 },
+  .nGramCPSHistory { history := 4, left := 2, right := 2, bound := 600 },
+  .nGramCPSHistory { history := 4, left := 3, right := 3, bound := 1600 },
+  .nGramCPSHistory { history := 6, left := 2, right := 2, bound := 3200 },
+  .nGramCPSHistory { history := 6, left := 3, right := 3, bound := 3200 },
+  .nGramCPSHistory { history := 8, left := 2, right := 2, bound := 1600 },
+  .nGramCPSHistory { history := 8, left := 3, right := 3, bound := 1600 },
+  .nGramCPSLRU { left := 2, right := 2, bound := 10000 },
+  .nGramCPSHistory { history := 10, left := 4, right := 4, bound := 10000 },
+  .repWL { len := 4, threshold := 3, maxT := 320, bound := 10000 }
 ]
 
-def determineConfig: (Option String) → IO (List DeciderConfig)
-| none => pure defaultConfig
+def defaultConfigFor (l s : ℕ) : List DeciderConfig :=
+  if l = 2 && s = 1 then
+    bb3DefaultConfig
+  else if l = 3 && s = 1 then
+    bb4DefaultConfig
+  else
+    lightDefaultConfig
+
+def determineConfig (l s : ℕ): (Option String) → IO (List DeciderConfig)
+| none => pure (defaultConfigFor l s)
 | some path => do
     return match (← configFromFile path) with
-    | none => defaultConfig
+    | none => defaultConfigFor l s
     | some cfg => cfg
 
 end DeciderCombinator
@@ -236,7 +275,7 @@ def runCheckCmd (p: Parsed): IO UInt32 := do
 
   IO.println s!"Parsed machine with {l + 1} labels and {s + 1} symbols: {repr M}"
 
-  let cfg ← determineConfig ((p.flag? "config").map (Parsed.Flag.as! · String))
+  let cfg ← determineConfig l s ((p.flag? "config").map (Parsed.Flag.as! · String))
 
   for d in cfg do
     let res := d.deciderTable M
@@ -283,7 +322,7 @@ unsafe def computeCmd (p: Parsed): IO UInt32 := do
   let l := (p.positionalArg! "nlabs" |>.as! ℕ) - 1
   let s := (p.positionalArg! "nsyms" |>.as! ℕ) - 1
 
-  let cfg ← determineConfig ((p.flag? "config").map (Parsed.Flag.as! · String))
+  let cfg ← determineConfig l s ((p.flag? "config").map (Parsed.Flag.as! · String))
   let dec := toLogDecider cfg (p.hasFlag "quiet")
 
   if hl: l = 0 then

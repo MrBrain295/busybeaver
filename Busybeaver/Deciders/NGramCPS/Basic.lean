@@ -23,6 +23,12 @@ structure NGramCPSHistoryConfig where
   bound : ℕ
 deriving DecidableEq, Repr
 
+structure NGramCPSLRUConfig where
+  left : ℕ
+  right : ℕ
+  bound : ℕ
+deriving DecidableEq, Repr
+
 abbrev NGram (s : ℕ) := Array (Symbol s)
 
 /--
@@ -428,6 +434,13 @@ def historyTransition (history : ℕ) (M : Machine l s) : Transition l (HistoryS
     | .next writeSym dir nextState =>
         some ((writeSym, ((state, sym.fst) :: sym.snd).take history), dir, nextState)
 
+def lruTransition (M : Machine l s) : Transition l (HistorySymbol l s) :=
+  fun state sym =>
+    match M.get state sym.fst with
+    | .halt => none
+    | .next writeSym dir nextState =>
+        some ((writeSym, (state, sym.fst) :: sym.snd.filter (· ≠ (state, sym.fst))), dir, nextState)
+
 def runStandard (left right bound : ℕ) (M : Machine l s) : SearchResult l (Symbol s) :=
   if left = 0 || right = 0 then
     .timeout
@@ -440,6 +453,14 @@ def runHistory (cfg : NGramCPSHistoryConfig) (M : Machine l s) :
     .timeout
   else
     runSearch (historyTransition cfg.history M) cfg.bound
+      (initialState (l := l) cfg.left cfg.right)
+
+def runLRU (cfg : NGramCPSLRUConfig) (M : Machine l s) :
+    SearchResult l (HistorySymbol l s) :=
+  if cfg.left = 0 || cfg.right = 0 then
+    .timeout
+  else
+    runSearch (lruTransition M) cfg.bound
       (initialState (l := l) cfg.left cfg.right)
 
 def decidedClosed : SearchResult l α → Bool

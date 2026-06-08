@@ -25,3 +25,18 @@ def nGramCPSHistoryDecider (cfg : NGramCPSHistoryConfig) (M : Machine l s) : Hal
     | .closed _ => .loops_prf (nGramCPSHistoryClosed_nonHalting cfg M hSearch)
     | .haltingEdge => .unknown ()
     | .timeout => .unknown ()
+
+private theorem nGramCPSLRUClosed_nonHalting
+    (cfg : NGramCPSLRUConfig) (M : Machine l s)
+    (hSearch : NGramCPS.Generic.runLRU cfg M = .closed state) :
+    ¬M.halts init := by
+  sorry
+
+def nGramCPSLRUDecider (cfg : NGramCPSLRUConfig) (M : Machine l s) : HaltM M Unit :=
+  if cfg.left = 0 || cfg.right = 0 then
+    .unknown ()
+  else
+    match hSearch : NGramCPS.Generic.runLRU cfg M with
+    | .closed _ => .loops_prf (nGramCPSLRUClosed_nonHalting cfg M hSearch)
+    | .haltingEdge => .unknown ()
+    | .timeout => .unknown ()

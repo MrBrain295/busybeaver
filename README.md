@@ -83,21 +83,37 @@ Available deciders include:
 - NGram CPS: `{ "nGramCPS": { "n": <number>, "bound": <number> } }`
 - History-augmented NGram CPS:
   `{ "nGramCPSHistory": { "history": <number>, "left": <number>, "right": <number>, "bound": <number> } }`
+- LRU-augmented NGram CPS:
+  `{ "nGramCPSLRU": { "left": <number>, "right": <number>, "bound": <number> } }`
+- Repeated Word List:
+  `{ "repWL": { "len": <number>, "threshold": <number>, "maxT": <number>, "bound": <number> } }`
 
-An example configuration file (which is equivalent to the default
-configuration):
+When no configuration file is passed, the executable uses a size-aware default:
+`BB(3,2)` includes the history-augmented NGram CPS pass needed to close the
+known holdouts, `BB(4,2)` uses the complete Coq-style pipeline, and larger runs
+use a lighter development default.
+
+The larger-run development default is equivalent to:
 ```json
 [
   { "explore": 130 },
-  { "translatedCycler": 4100 },
-  { "cycler": 4100 },
+  { "translatedCycler": 300 },
+  { "cycler": 300 },
   { "nGramCPS": { "n": 1, "bound": 100 } },
   { "nGramCPS": { "n": 2, "bound": 200 } },
-  { "nGramCPS": { "n": 3, "bound": 400 } },
-  { "nGramCPSHistory": { "history": 2, "left": 2, "right": 2, "bound": 1600 } },
-  { "backwardsReasoning": 30 }
+  { "nGramCPS": { "n": 3, "bound": 400 } }
 ]
 ```
+
+For `BB(3,2)`, the default additionally appends:
+```json
+{ "nGramCPSHistory": { "history": 2, "left": 2, "right": 2, "bound": 1600 } }
+```
+
+For `BB(4,2)`, the default follows the exact `S(4)` pipeline from the Coq proof:
+loop detection with bound `107`, the standard NGram CPS passes, the fixed-history
+and LRU NGram CPS passes, and finally RepWL with `{ "len": 4, "threshold": 3,
+"maxT": 320, "bound": 10000 }`.
 
 # Architecture of the project
 
