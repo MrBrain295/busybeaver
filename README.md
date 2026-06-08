@@ -75,16 +75,27 @@ The binary admits a configuration file for the deciders, in JSON, the
 configuration is an array of decider parameters, which can be
 repeated.
 
-There are two deciders currently:
+Available deciders include:
+- Bounded exploration: `{ "explore": <number> }`
 - Translated cyclers: `{ "translatedCycler": <number> }`
 - Cyclers: `{ "cycler": <number> }`
+- Backwards reasoning: `{ "backwardsReasoning": <number> }`
+- NGram CPS: `{ "nGramCPS": { "n": <number>, "bound": <number> } }`
+- History-augmented NGram CPS:
+  `{ "nGramCPSHistory": { "history": <number>, "left": <number>, "right": <number>, "bound": <number> } }`
 
 An example configuration file (which is equivalent to the default
 configuration):
 ```json
 [
-  { "translatedCycler" :  200 },
-  { "cycler" : 100 }
+  { "explore": 130 },
+  { "translatedCycler": 4100 },
+  { "cycler": 4100 },
+  { "nGramCPS": { "n": 1, "bound": 100 } },
+  { "nGramCPS": { "n": 2, "bound": 200 } },
+  { "nGramCPS": { "n": 3, "bound": 400 } },
+  { "nGramCPSHistory": { "history": 2, "left": 2, "right": 2, "bound": 1600 } },
+  { "backwardsReasoning": 30 }
 ]
 ```
 

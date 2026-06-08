@@ -126,10 +126,9 @@ private def modelHaltMToTableHaltM
         intro hhalts
         exact h (tableHalts_to_modelHalts hhalts))
 
-def compute (l s: ℕ) (dec: (M: Machine l s) → TM.Model.HaltM M Unit): Busybeaver.BBResult l s :=
-  let tableDec := fun M => modelHaltMToTableHaltM (dec M)
-  let res0 := Busybeaver.BBCompute tableDec (Busybeaver.BBCompute.m0RB l s)
-  let res1 := Busybeaver.BBCompute tableDec (Busybeaver.BBCompute.m1RB l s)
+def compute (l s: ℕ) (dec: (M: Machine l s) → HaltM M Unit): Busybeaver.BBResult l s :=
+  let res0 := Busybeaver.BBCompute dec (Busybeaver.BBCompute.m0RB l s)
+  let res1 := Busybeaver.BBCompute dec (Busybeaver.BBCompute.m1RB l s)
   Busybeaver.BBResult.join res0 res1
 
 section DeciderCombinator
@@ -137,6 +136,7 @@ section DeciderCombinator
 open Lean
 
 deriving instance FromJson, ToJson for NGramCPSConfig
+deriving instance FromJson, ToJson for NGramCPSHistoryConfig
 
 inductive DeciderConfig where
 | translatedCycler : ℕ → DeciderConfig
@@ -144,6 +144,7 @@ inductive DeciderConfig where
 | explore : ℕ → DeciderConfig
 | backwardsReasoning : ℕ → DeciderConfig
 | nGramCPS : NGramCPSConfig → DeciderConfig
+| nGramCPSHistory : NGramCPSHistoryConfig → DeciderConfig
 deriving FromJson, ToJson
 
 instance: ToString DeciderConfig where
@@ -153,6 +154,8 @@ instance: ToString DeciderConfig where
   | .explore n => s!"Explore {n}"
   | .backwardsReasoning n => s!"Backwards Reasoning {n}"
   | .nGramCPS cfg => s!"NGram CPS n={cfg.n} bound={cfg.bound}"
+  | .nGramCPSHistory cfg =>
+      s!"NGram CPS history={cfg.history} left={cfg.left} right={cfg.right} bound={cfg.bound}"
 
 def DeciderConfig.deciderModel {M : Type _} [TM.Model M] (cfg: DeciderConfig) (m : M) :
     TM.Model.HaltM m Unit := match cfg with
@@ -161,18 +164,27 @@ def DeciderConfig.deciderModel {M : Type _} [TM.Model M] (cfg: DeciderConfig) (m
 | .explore n => do
     let _ ← Deciders.BoundExplore.boundedExplore n m
 | .cycler n => Deciders.Cyclers.looperDecider n m
--- TODO: Bring back backwards reasoning decider
--- TODO: Bring back nGramCPS decider
 | _ => .unknown ()
+
+def DeciderConfig.deciderTable (cfg: DeciderConfig) (M: Machine l s) : HaltM M Unit := match cfg with
+| .backwardsReasoning n => backwardsReasoningDecider n M
+| .nGramCPS cfg => nGramCPSDecider cfg M
+| .nGramCPSHistory cfg => nGramCPSHistoryDecider cfg M
+| _ => modelHaltMToTableHaltM (cfg.deciderModel M)
 
 @[inline]
 def toDecider (cfg: List DeciderConfig) (M: Machine l s): TM.Model.HaltM M Unit := do
   for d in cfg do
     d.deciderModel M
 
-def toLogDecider (cfg: List DeciderConfig) (quiet: Bool) (M: Machine l s): TM.Model.HaltM M Unit := do
-  let res := toDecider cfg M
-  if !quiet && !TM.Model.HaltM.decided res then
+@[inline]
+def toTableDecider (cfg: List DeciderConfig) (M: Machine l s): HaltM M Unit := do
+  for d in cfg do
+    d.deciderTable M
+
+def toLogDecider (cfg: List DeciderConfig) (quiet: Bool) (M: Machine l s): HaltM M Unit := do
+  let res := toTableDecider cfg M
+  if !quiet && !HaltM.decided res then
     dbg_trace s!"{repr M} {res}"
   res
 
@@ -183,11 +195,14 @@ def configFromFile (path: String): IO (Option <| List DeciderConfig) := do
   return done
 
 def defaultConfig: List DeciderConfig := [
-  .explore 100,
-  .translatedCycler 300,
-  .cycler 300,
-  .backwardsReasoning 30,
-  .nGramCPS { n := 1, bound := 10000 }
+  .explore 130,
+  .translatedCycler 4100,
+  .cycler 4100,
+  .nGramCPS { n := 1, bound := 100 },
+  .nGramCPS { n := 2, bound := 200 },
+  .nGramCPS { n := 3, bound := 400 },
+  .nGramCPSHistory { history := 2, left := 2, right := 2, bound := 1600 },
+  .backwardsReasoning 30
 ]
 
 def determineConfig: (Option String) → IO (List DeciderConfig)
@@ -224,7 +239,7 @@ def runCheckCmd (p: Parsed): IO UInt32 := do
   let cfg ← determineConfig ((p.flag? "config").map (Parsed.Flag.as! · String))
 
   for d in cfg do
-    let res := d.deciderModel M
+    let res := d.deciderTable M
     IO.println s!"{d}: {res}"
 
   return 0

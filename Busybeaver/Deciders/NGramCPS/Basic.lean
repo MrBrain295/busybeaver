@@ -16,6 +16,13 @@ structure NGramCPSConfig where
   bound : ℕ
 deriving DecidableEq, Repr
 
+structure NGramCPSHistoryConfig where
+  history : ℕ
+  left : ℕ
+  right : ℕ
+  bound : ℕ
+deriving DecidableEq, Repr
+
 abbrev NGram (s : ℕ) := Array (Symbol s)
 
 /--
@@ -232,3 +239,212 @@ def initialState (cfg : NGramCPSConfig) : SearchState l s :=
   }
 
 end NGramCPS
+
+/-!
+## Executable generic NGramCPS
+
+The definitions below are an algorithm-only port of the generic Coq NGramCPS
+implementation.  Unlike the proof-oriented definitions above, the tape alphabet
+is a parameter, so the same search can run over augmented alphabets such as the
+fixed-length update history used by Coq's `NGramCPS_decider_impl1`.
+-/
+
+namespace NGramCPS.Generic
+
+structure PartialConfig (l : ℕ) (α : Type _) where
+  left : Array α
+  head : α
+  state : Label l
+  right : Array α
+deriving DecidableEq, Repr
+
+structure SearchState (l : ℕ) (α : Type _) where
+  leftNGrams : Array (Array α)
+  rightNGrams : Array (Array α)
+  partialConfigs : Array (PartialConfig l α)
+  frontier : List (PartialConfig l α)
+deriving DecidableEq, Repr
+
+structure Expansion (l : ℕ) (α : Type _) where
+  leftNGrams : Array (Array α)
+  rightNGrams : Array (Array α)
+  successors : Array (PartialConfig l α)
+deriving Repr
+
+inductive StepResult (l : ℕ) (α : Type _) where
+  | haltingEdge
+  | advanced (expansion : Expansion l α)
+deriving Repr
+
+inductive RoundResult (l : ℕ) (α : Type _) where
+  | closed (state : SearchState l α)
+  | haltingEdge
+  | timeout
+  | restart (remaining : ℕ) (state : SearchState l α)
+deriving DecidableEq, Repr
+
+inductive SearchResult (l : ℕ) (α : Type _) where
+  | closed (state : SearchState l α)
+  | haltingEdge
+  | timeout
+deriving DecidableEq, Repr
+
+abbrev Transition (l : ℕ) (α : Type _) := Label l → α → Option (α × Turing.Dir × Label l)
+
+def expandRight [Inhabited α] [DecidableEq α] (rightNGrams : Array (Array α))
+    (cfg : PartialConfig l α) (writeSym : α) (nextState : Label l) : Expansion l α :=
+  let newLeft := NGramCPS.shiftInNear writeSym cfg.left
+  let rightPrefix := cfg.right.drop 1
+  let newHead := cfg.right.getD 0 default
+  let successors :=
+    NGramCPS.matchingLastSymbols rightPrefix rightNGrams default |>.map fun sym ↦
+      {
+        left := newLeft
+        head := newHead
+        state := nextState
+        right := NGramCPS.appendFar rightPrefix sym
+      }
+  {
+    leftNGrams := #[newLeft]
+    rightNGrams := #[]
+    successors
+  }
+
+def expandLeft [Inhabited α] [DecidableEq α] (leftNGrams : Array (Array α))
+    (cfg : PartialConfig l α) (writeSym : α) (nextState : Label l) : Expansion l α :=
+  let newRight := NGramCPS.shiftInNear writeSym cfg.right
+  let leftPrefix := cfg.left.drop 1
+  let newHead := cfg.left.getD 0 default
+  let successors :=
+    NGramCPS.matchingLastSymbols leftPrefix leftNGrams default |>.map fun sym ↦
+      {
+        left := NGramCPS.appendFar leftPrefix sym
+        head := newHead
+        state := nextState
+        right := newRight
+      }
+  {
+    leftNGrams := #[]
+    rightNGrams := #[newRight]
+    successors
+  }
+
+def stepPartialConfig [Inhabited α] [DecidableEq α] (tm : Transition l α)
+    (leftNGrams rightNGrams : Array (Array α)) (cfg : PartialConfig l α) :
+    StepResult l α :=
+  match tm cfg.state cfg.head with
+  | none => .haltingEdge
+  | some (writeSym, .right, nextState) => .advanced (expandRight rightNGrams cfg writeSym nextState)
+  | some (writeSym, .left, nextState) => .advanced (expandLeft leftNGrams cfg writeSym nextState)
+
+def addSuccessors [DecidableEq α] (known : Array (PartialConfig l α))
+    (frontier : List (PartialConfig l α)) (successors : Array (PartialConfig l α)) :
+    Array (PartialConfig l α) × List (PartialConfig l α) × Bool :=
+  successors.toList.foldl
+    (fun (acc : Array (PartialConfig l α) × List (PartialConfig l α) × Bool) cfg =>
+      let (knownAcc, frontierAcc, _changed) := acc
+      if cfg ∈ knownAcc then
+        acc
+      else
+        (knownAcc.push cfg, cfg :: frontierAcc, true))
+    (known, frontier, false)
+
+def runRound [Inhabited α] [DecidableEq α] (tm : Transition l α) :
+    ℕ → SearchState l α → Bool → RoundResult l α
+  | bound, state, changed =>
+      match state.frontier with
+      | [] =>
+          if changed then
+            .restart bound { state with frontier := state.partialConfigs.toList }
+          else
+            .closed state
+      | cfg :: rest =>
+          match bound with
+          | 0 => .timeout
+          | bound' + 1 =>
+              match stepPartialConfig tm state.leftNGrams state.rightNGrams cfg with
+              | .haltingEdge => .haltingEdge
+              | .advanced expansion =>
+                  let nextLeft := NGramCPS.insertAllIfNew state.leftNGrams expansion.leftNGrams
+                  let nextRight := NGramCPS.insertAllIfNew state.rightNGrams expansion.rightNGrams
+                  let (nextConfigs, nextFrontier, configsChanged) :=
+                    addSuccessors state.partialConfigs rest expansion.successors
+                  let changed' :=
+                    changed ||
+                    configsChanged ||
+                    nextLeft.size ≠ state.leftNGrams.size ||
+                    nextRight.size ≠ state.rightNGrams.size
+                  runRound tm bound' {
+                    leftNGrams := nextLeft
+                    rightNGrams := nextRight
+                    partialConfigs := nextConfigs
+                    frontier := nextFrontier
+                  } changed'
+
+def runSearchOuter [Inhabited α] [DecidableEq α] (tm : Transition l α) :
+    ℕ → ℕ → SearchState l α → SearchResult l α
+  | 0, _, _ => .timeout
+  | rounds + 1, remaining, state =>
+      match runRound tm remaining state false with
+      | .closed state' => .closed state'
+      | .haltingEdge => .haltingEdge
+      | .timeout => .timeout
+      | .restart remaining' state' => runSearchOuter tm rounds remaining' state'
+
+def runSearch [Inhabited α] [DecidableEq α] (tm : Transition l α) (bound : ℕ)
+    (state : SearchState l α) : SearchResult l α :=
+  runSearchOuter tm bound bound state
+
+def initialState [Inhabited α] (left right : ℕ) : SearchState l α :=
+  let blankLeft := Array.replicate left default
+  let blankRight := Array.replicate right default
+  let firstConfig : PartialConfig l α := {
+    left := blankLeft
+    head := default
+    state := default
+    right := blankRight
+  }
+  {
+    leftNGrams := #[blankLeft]
+    rightNGrams := #[blankRight]
+    partialConfigs := #[firstConfig]
+    frontier := [firstConfig]
+  }
+
+def standardTransition (M : Machine l s) : Transition l (Symbol s) :=
+  fun state sym =>
+    match M.get state sym with
+    | .halt => none
+    | .next writeSym dir nextState => some (writeSym, dir, nextState)
+
+abbrev HistorySymbol (l s : ℕ) := Symbol s × List (Label l × Symbol s)
+
+instance : Inhabited (HistorySymbol l s) := ⟨(default, [])⟩
+
+def historyTransition (history : ℕ) (M : Machine l s) : Transition l (HistorySymbol l s) :=
+  fun state sym =>
+    match M.get state sym.fst with
+    | .halt => none
+    | .next writeSym dir nextState =>
+        some ((writeSym, ((state, sym.fst) :: sym.snd).take history), dir, nextState)
+
+def runStandard (left right bound : ℕ) (M : Machine l s) : SearchResult l (Symbol s) :=
+  if left = 0 || right = 0 then
+    .timeout
+  else
+    runSearch (standardTransition M) bound (initialState (l := l) left right)
+
+def runHistory (cfg : NGramCPSHistoryConfig) (M : Machine l s) :
+    SearchResult l (HistorySymbol l s) :=
+  if cfg.left = 0 || cfg.right = 0 then
+    .timeout
+  else
+    runSearch (historyTransition cfg.history M) cfg.bound
+      (initialState (l := l) cfg.left cfg.right)
+
+def decidedClosed : SearchResult l α → Bool
+  | .closed _ => true
+  | .haltingEdge => false
+  | .timeout => false
+
+end NGramCPS.Generic
