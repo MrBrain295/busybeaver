@@ -87,10 +87,13 @@ Available deciders include:
   `{ "nGramCPSLRU": { "left": <number>, "right": <number>, "bound": <number> } }`
 - Repeated Word List:
   `{ "repWL": { "len": <number>, "threshold": <number>, "maxT": <number>, "bound": <number> } }`
+- BB5 generated hardcoded table: `"bb5TableExecutable"`
+- BB5 generated full table alias: `"bb5TableAll"`
 
 When no configuration file is passed, the executable uses a size-aware default:
 `BB(3,2)` includes the history-augmented NGram CPS pass needed to close the
-known holdouts, `BB(4,2)` uses the complete Coq-style pipeline, and larger runs
+known holdouts, `BB(4,2)` uses the complete Coq-style pipeline, `BB(5,2)` uses
+the Coq NGram pipeline plus the generated hardcoded table, and other larger runs
 use a lighter development default.
 
 The larger-run development default is equivalent to:
@@ -114,6 +117,12 @@ For `BB(4,2)`, the default follows the exact `S(4)` pipeline from the Coq proof:
 loop detection with bound `107`, the standard NGram CPS passes, the fixed-history
 and LRU NGram CPS passes, and finally RepWL with `{ "len": 4, "threshold": 3,
 "maxT": 320, "bound": 10000 }`.
+
+For `BB(5,2)`, the default uses bounded exploration passes for partial-machine
+expansion, the generic NGram CPS passes from the Coq BB5 pipeline, and finally
+`"bb5TableExecutable"`. The generated table contains all 8,228 hardcoded Coq
+rows, including custom NGram, RepWL, halt, Loop1, FAR, WFAR, and sporadic
+entries.
 
 # Architecture of the project
 

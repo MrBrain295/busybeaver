@@ -149,6 +149,8 @@ inductive DeciderConfig where
 | nGramCPSHistory : NGramCPSHistoryConfig → DeciderConfig
 | nGramCPSLRU : NGramCPSLRUConfig → DeciderConfig
 | repWL : RepWLConfig → DeciderConfig
+| bb5TableExecutable : DeciderConfig
+| bb5TableAll : DeciderConfig
 deriving FromJson, ToJson
 
 instance: ToString DeciderConfig where
@@ -164,6 +166,8 @@ instance: ToString DeciderConfig where
       s!"NGram CPS LRU left={cfg.left} right={cfg.right} bound={cfg.bound}"
   | .repWL cfg =>
       s!"RepWL len={cfg.len} threshold={cfg.threshold} maxT={cfg.maxT} bound={cfg.bound}"
+  | .bb5TableExecutable => "BB5 executable hardcoded table"
+  | .bb5TableAll => "BB5 full hardcoded table"
 
 def DeciderConfig.deciderModel {M : Type _} [TM.Model M] (cfg: DeciderConfig) (m : M) :
     TM.Model.HaltM m Unit := match cfg with
@@ -174,12 +178,19 @@ def DeciderConfig.deciderModel {M : Type _} [TM.Model M] (cfg: DeciderConfig) (m
 | .cycler n => Deciders.Cyclers.looperDecider n m
 | _ => .unknown ()
 
+def runBB5Table (table : Deciders.BB5Table.Table) (M : Machine l s) : HaltM M Unit :=
+  match l, s with
+  | 4, 1 => Deciders.BB5Table.tableDecider table M
+  | _, _ => .unknown ()
+
 def DeciderConfig.deciderTable (cfg: DeciderConfig) (M: Machine l s) : HaltM M Unit := match cfg with
 | .backwardsReasoning n => backwardsReasoningDecider n M
 | .nGramCPS cfg => nGramCPSDecider cfg M
 | .nGramCPSHistory cfg => nGramCPSHistoryDecider cfg M
 | .nGramCPSLRU cfg => nGramCPSLRUDecider cfg M
 | .repWL cfg => Deciders.RepWL.decider cfg M
+| .bb5TableExecutable => runBB5Table Deciders.BB5Table.Generated.executableTable M
+| .bb5TableAll => runBB5Table Deciders.BB5Table.Generated.allTable M
 | _ => modelHaltMToTableHaltM (cfg.deciderModel M)
 
 @[inline]
@@ -236,11 +247,30 @@ def bb4DefaultConfig: List DeciderConfig := [
   .repWL { len := 4, threshold := 3, maxT := 320, bound := 10000 }
 ]
 
+def bb5DefaultConfig: List DeciderConfig := [
+  .explore 130,
+  .nGramCPS { n := 1, bound := 100 },
+  .nGramCPS { n := 2, bound := 200 },
+  .nGramCPS { n := 3, bound := 400 },
+  .nGramCPSHistory { history := 2, left := 2, right := 2, bound := 1600 },
+  .nGramCPSHistory { history := 2, left := 3, right := 3, bound := 1600 },
+  .explore 4100,
+  .nGramCPSHistory { history := 4, left := 2, right := 2, bound := 600 },
+  .nGramCPSHistory { history := 4, left := 3, right := 3, bound := 1600 },
+  .nGramCPSHistory { history := 6, left := 2, right := 2, bound := 3200 },
+  .nGramCPSHistory { history := 6, left := 3, right := 3, bound := 3200 },
+  .nGramCPSHistory { history := 8, left := 2, right := 2, bound := 1600 },
+  .nGramCPSHistory { history := 8, left := 3, right := 3, bound := 1600 },
+  .bb5TableExecutable
+]
+
 def defaultConfigFor (l s : ℕ) : List DeciderConfig :=
   if l = 2 && s = 1 then
     bb3DefaultConfig
   else if l = 3 && s = 1 then
     bb4DefaultConfig
+  else if l = 4 && s = 1 then
+    bb5DefaultConfig
   else
     lightDefaultConfig
 
