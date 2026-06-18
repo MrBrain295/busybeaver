@@ -163,4 +163,31 @@ lemma zigzag {q1 q2 : Label l} {a b c : Symbol s}
   have hlast := step_left_mk' (l₀ := sep) h1 L (zigzagAcc b c t R)
   exact hpairs.tail hlast
 
+/-- The `t` complete pairs of a two-state alternating *rightward* sweep. States
+`q1` and `q2` both read `a` and move right; `q1` writes `b → q2`, `q2` writes
+`c → q1`. Mirror image of `zigzag_pairs`: each pair consumes two `a`s from the
+right, prepending `c, b` to the left accumulator.  The tail `R` after the block
+is arbitrary, so with `R = cons sep R'` this also realizes an even-length sweep
+that ends in state `q1` reading the separator. -/
+lemma zigzag_pairs_right {q1 q2 : Label l} {a b c : Symbol s}
+    (h1 : M.get q1 a = .next b .right q2)
+    (h2 : M.get q2 a = .next c .right q1) :
+    ∀ (t : ℕ) (L R : ListBlank (Symbol s)),
+      (⟨q1, Tape.mk' L (List.replicate (2 * t) a ++ R)⟩ : Config l s)
+        -[M]{2 * t}->
+      ⟨q1, Tape.mk' (zigzagAcc b c t L) R⟩
+  | 0, L, R => by simpa [zigzagAcc] using Machine.Multistep.refl
+  | t + 1, L, R => by
+      have hblk : List.replicate (2 * (t + 1)) a ++ R
+          = ListBlank.cons a (ListBlank.cons a (List.replicate (2 * t) a ++ R)) := by
+        simp only [Nat.mul_succ, List.replicate_succ, ListBlank.append_cons]
+      rw [hblk]
+      have e1 := step_right_mk' h1 L (ListBlank.cons a (List.replicate (2 * t) a ++ R))
+      have e2 := step_right_mk' h2 (ListBlank.cons b L) (List.replicate (2 * t) a ++ R)
+      have ih := zigzag_pairs_right h1 h2 t (ListBlank.cons c (ListBlank.cons b L)) R
+      rw [zigzagAcc_cons] at ih
+      have hcount : 2 * (t + 1) = 2 * t + 1 + 1 := by omega
+      rw [hcount]
+      exact Machine.Multistep.succ e1 (Machine.Multistep.succ e2 ih)
+
 end TM.Table
