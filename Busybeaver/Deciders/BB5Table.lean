@@ -433,8 +433,184 @@ end SM1
 theorem sporadicMachine1_nonHalting : ¬ sporadicMachine1.halts init := SM1.nonHalting
 
 def sporadicMachine2 : Machine 4 1 := mach["1RB1RE_1LC1RB_0RA0LD_1LB1LD_---0RA"]
-theorem sporadicMachine2_nonHalting : ¬ sporadicMachine2.halts init := by
-  sorry
+
+/-!
+### Non-halting proof for `sporadicMachine2`
+
+`1RB1RE_1LC1RB_0RA0LD_1LB1LD_---0RA` is a quadratic counter whose left side
+carries a *comb* of `(01)` pairs.  We track the family `K q j` (state B reading a
+`0`, left `1^(2q+j+1) (01)^j`, right `1^q`) closed under:
+
+* a *subbounce* `K q (j+1) → K (q+1) j` that dives left, absorbs the first comb
+  pair into the central block, and bounces back (only `left_run`/`right_run`), and
+* a *reset* `K q 0 → K 0 (q+1)` that runs to the left edge and rebuilds a fresh
+  comb of `q+1` pairs on the way back right (an A/E zig-zag).
+-/
+namespace SM2
+open Turing
+
+abbrev M : Machine 4 1 := sporadicMachine2
+
+-- Transition lemmas (A=0, B=1, C=2, D=3, E=4).
+lemma gA0 : M.get 0 0 = .next 1 .right 1 := by decide
+lemma gA1 : M.get 0 1 = .next 1 .right 4 := by decide
+lemma gB0 : M.get 1 0 = .next 1 .left 2 := by decide
+lemma gB1 : M.get 1 1 = .next 1 .right 1 := by decide
+lemma gC0 : M.get 2 0 = .next 0 .right 0 := by decide
+lemma gC1 : M.get 2 1 = .next 0 .left 3 := by decide
+lemma gD0 : M.get 3 0 = .next 1 .left 1 := by decide
+lemma gD1 : M.get 3 1 = .next 1 .left 3 := by decide
+lemma gE1 : M.get 4 1 = .next 0 .right 0 := by decide
+-- Blank-edge transitions (head reading the blank `default`).
+lemma gA0d : M.get 0 default = .next 1 .right 1 := by decide
+lemma gB0d : M.get 1 default = .next 1 .left 2 := by decide
+
+local notation "𝟙" => (1 : Symbol 1)
+local notation "𝟘" => (0 : Symbol 1)
+
+/-- Abbreviation: `1^n` prepended to a `ListBlank`. -/
+abbrev Bl (n : ℕ) (L : ListBlank (Symbol 1)) : ListBlank (Symbol 1) :=
+  List.replicate n (1 : Symbol 1) ++ L
+
+/-- The `(01)^j` comb carried on the left of the counter (adjacent-to-head first). -/
+def comb : ℕ → ListBlank (Symbol 1)
+  | 0 => ∅
+  | j + 1 => ListBlank.cons 0 (ListBlank.cons 1 (comb j))
+
+/-- The counter family `K q j`: state B reading `0`, left `1^(2q+j+1) (01)^j`, right `1^q`. -/
+def K (q j : ℕ) : Config 4 1 :=
+  ⟨1, Tape.mk' (Bl (2 * q + j + 1) (comb j)) (ListBlank.cons 0 (Bl q ∅))⟩
+
+lemma cons_zero_empty : ListBlank.cons (0 : Symbol 1) ∅ = ∅ :=
+  ListBlank.cons_default_empty
+
+/-- One subbounce: `K q (j+1)` reaches `K (q+1) j` (absorb one comb pair). -/
+lemma subbounce (q j : ℕ) : K q (j + 1) -[M]->+ K (q + 1) j := by
+  -- (a) B reads 0 → C, diving left into the block
+  have ha := step_left_mk' (l₀ := 𝟙) gB0 (Bl (2 * q + j + 1) (comb (j + 1))) (Bl q ∅)
+  -- (b) C reads 1 → D, planting a 0
+  have hb := step_left_mk' (l₀ := 𝟙) gC1 (Bl (2 * q + j) (comb (j + 1))) (ListBlank.cons 𝟙 (Bl q ∅))
+  -- (c) D sweeps left over the block interior
+  have hc := left_run gD1 (2 * q + j) (comb (j + 1))
+      (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 (Bl q ∅)))
+  -- (d) D reads 1 → D, stepping onto the first comb 0
+  have hd := step_left_mk' (l₀ := 𝟘) gD1 (ListBlank.cons 𝟙 (comb j))
+      (Bl (2 * q + j) (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 (Bl q ∅))))
+  -- (e) D reads 0 → B, planting a 1 (merging the comb pair into the block)
+  have he := step_left_mk' (l₀ := 𝟙) gD0 (comb j)
+      (ListBlank.cons 𝟙 (Bl (2 * q + j) (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 (Bl q ∅)))))
+  -- (f) B sweeps right back to the planted 0
+  have hf := right_run gB1 (2 * q + j + 3) (comb j) (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 (Bl q ∅)))
+  have chain :
+      (⟨1, Tape.mk' (Bl (2 * q + j + 2) (comb (j + 1))) (ListBlank.cons 𝟘 (Bl q ∅))⟩ : Config 4 1)
+        -[M]{1 + 1 + (2 * q + j) + 1 + 1 + (2 * q + j + 3)}->
+      ⟨1, Tape.mk' (Bl (2 * q + j + 3) (comb j)) (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 (Bl q ∅)))⟩ :=
+    (((((Machine.Multistep.single ha).trans (Machine.Multistep.single hb)).trans hc).trans
+      (Machine.Multistep.single hd)).trans (Machine.Multistep.single he)).trans hf
+  have hsrc : K q (j + 1) = (⟨1, Tape.mk' (Bl (2 * q + j + 2) (comb (j + 1)))
+      (ListBlank.cons 𝟘 (Bl q ∅))⟩ : Config 4 1) := by
+    unfold K; rw [show 2 * q + (j + 1) + 1 = 2 * q + j + 2 by omega]
+  have htgt : K (q + 1) j = (⟨1, Tape.mk' (Bl (2 * q + j + 3) (comb j))
+      (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 (Bl q ∅)))⟩ : Config 4 1) := by
+    unfold K; rw [show 2 * (q + 1) + j + 1 = 2 * q + j + 3 by omega]; rfl
+  rw [hsrc, htgt]
+  exact Machine.Progress.from_multistep' (by omega) chain
+
+/-- The rightward zig-zag accumulator collapses to the `(01)^n` comb. -/
+lemma combeq (n : ℕ) : zigzagAcc (1 : Symbol 1) 0 n ∅ = comb n := by
+  induction n with
+  | zero => rfl
+  | succ n ih => simp only [zigzagAcc, comb, ih]
+
+lemma Bl_zero (L : ListBlank (Symbol 1)) : Bl 0 L = L := rfl
+
+lemma Bl_cons (n : ℕ) (L : ListBlank (Symbol 1)) :
+    Bl n (ListBlank.cons 1 L) = Bl (n + 1) L := (replicate_succ_append 1 n L).symm
+
+/-- The reset: `K (m+1) 0` reaches `K 0 (m+2)` (run to the left edge, then rebuild
+a fresh comb on the way back right). -/
+lemma reset (m : ℕ) : K (m + 1) 0 -[M]->+ K 0 (m + 2) := by
+  -- (a) B reads 0 → C, diving left
+  have ha := step_left_mk' (l₀ := 𝟙) gB0 (Bl (2 * m + 2) (∅ : ListBlank (Symbol 1))) (Bl (m + 1) ∅)
+  -- (b) C reads 1 → D, planting a 0
+  have hb := step_left_mk' (l₀ := 𝟙) gC1 (Bl (2 * m + 1) (∅ : ListBlank (Symbol 1)))
+      (ListBlank.cons 𝟙 (Bl (m + 1) ∅))
+  -- (c) D sweeps left over the block interior
+  have hc := left_run gD1 (2 * m + 1) (∅ : ListBlank (Symbol 1))
+      (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 (Bl (m + 1) ∅)))
+  -- (d) D reads the last 1 at the left edge → fresh blank
+  have hd := step_left_edge gD1 (Bl (2 * m + 1) (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 (Bl (m + 1) ∅))))
+  -- (e) D reads blank → B, planting a 1
+  have he := step_left_edge gD0
+      (ListBlank.cons 𝟙 (Bl (2 * m + 1) (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 (Bl (m + 1) ∅)))))
+  -- (f) B reads blank → C
+  have hf := step_left_edge gB0
+      (ListBlank.cons 𝟙 (ListBlank.cons 𝟙 (Bl (2 * m + 1) (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 (Bl (m + 1) ∅))))))
+  -- (g) C reads blank → A
+  have hg := step_right_mk' gC0 (∅ : ListBlank (Symbol 1))
+      (ListBlank.cons 𝟙 (ListBlank.cons 𝟙 (ListBlank.cons 𝟙 (Bl (2 * m + 1) (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 (Bl (m + 1) ∅)))))))
+  -- (h) A/E zig-zag right over the even block, building the new comb on the left
+  have hi := zigzag_pairs_right gA1 gE1 (m + 2) (ListBlank.cons 𝟘 ∅)
+      (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 (Bl (m + 1) ∅)))
+  -- (i) A reads the separator 0 → B
+  have hj := step_right_mk' gA0 (zigzagAcc 𝟙 0 (m + 2) (ListBlank.cons 𝟘 ∅)) (ListBlank.cons 𝟙 (Bl (m + 1) ∅))
+  -- (j) B sweeps right over the second block to the right edge
+  have hk := right_run gB1 (m + 2) (ListBlank.cons 𝟙 (zigzagAcc 𝟙 0 (m + 2) (ListBlank.cons 𝟘 ∅)))
+      (∅ : ListBlank (Symbol 1))
+  have chain := ((((((((Machine.Multistep.single ha).trans
+      (Machine.Multistep.single hb)).trans hc).trans (Machine.Multistep.single hd)).trans
+      (Machine.Multistep.single he)).trans (Machine.Multistep.single hf)).trans
+      (Machine.Multistep.single hg)).trans hi).trans (Machine.Multistep.single hj) |>.trans hk
+  have htgt : (⟨1, Tape.mk' (Bl (m + 2) (ListBlank.cons 𝟙 (zigzagAcc 𝟙 0 (m + 2) (ListBlank.cons 𝟘 ∅))))
+      (∅ : ListBlank (Symbol 1))⟩ : Config 4 1) = K 0 (m + 2) := by
+    unfold K
+    simp only [cons_zero_empty, combeq, Bl_cons, Bl_zero,
+      show 2 * 0 + (m + 2) + 1 = m + 3 by omega]
+  rw [← htgt]
+  exact Machine.Progress.from_multistep' (by omega) chain
+
+/-- The initial configuration reaches the base case `K 0 1` of the counter family.
+Ten explicit steps from the all-blank tape. -/
+lemma enters : init -[M]->* K 0 1 := by
+  have s0 := step_right_blank gA0d (∅ : ListBlank (Symbol 1))
+  have s1 := step_left_blank (l₀ := 𝟙) gB0d (∅ : ListBlank (Symbol 1))
+  have s2 := step_left_edge gC1 (ListBlank.cons 𝟙 ∅)
+  have s3 := step_left_edge gD0 (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 ∅))
+  have s4 := step_left_edge gB0 (ListBlank.cons 𝟙 (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 ∅)))
+  have s5 := step_right_mk' gC0 (∅ : ListBlank (Symbol 1))
+      (ListBlank.cons 𝟙 (ListBlank.cons 𝟙 (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 ∅))))
+  have s6 := step_right_mk' gA1 (ListBlank.cons 𝟘 ∅) (ListBlank.cons 𝟙 (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 ∅)))
+  have s7 := step_right_mk' gE1 (ListBlank.cons 𝟙 (ListBlank.cons 𝟘 ∅)) (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 ∅))
+  have s8 := step_right_mk' gA0 (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 (ListBlank.cons 𝟘 ∅))) (ListBlank.cons 𝟙 ∅)
+  have s9 := step_right_mk' gB1 (ListBlank.cons 𝟙 (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 (ListBlank.cons 𝟘 ∅))))
+      (∅ : ListBlank (Symbol 1))
+  have chain := ((((((((Machine.Multistep.single s0).trans
+      (Machine.Multistep.single s1)).trans (Machine.Multistep.single s2)).trans
+      (Machine.Multistep.single s3)).trans (Machine.Multistep.single s4)).trans
+      (Machine.Multistep.single s5)).trans (Machine.Multistep.single s6)).trans
+      (Machine.Multistep.single s7)).trans (Machine.Multistep.single s8) |>.trans
+      (Machine.Multistep.single s9)
+  have htgt : K 0 1 = (⟨1, Tape.mk' (ListBlank.cons 𝟙 (ListBlank.cons 𝟙 (ListBlank.cons 𝟘
+      (ListBlank.cons 𝟙 (ListBlank.cons 𝟘 ∅))))) (∅ : ListBlank (Symbol 1))⟩ : Config 4 1) := by
+    unfold K; simp only [comb, cons_zero_empty, Bl_zero]; rfl
+  rw [htgt]
+  exact Machine.Multistep.to_evstep chain
+
+theorem nonHalting : ¬ M.halts init := by
+  have cs : ClosedSet M (fun C => ∃ q j, q + j ≥ 1 ∧ C = K q j) init := by
+    refine ⟨?_, ?_⟩
+    · rintro ⟨C, q, j, hqj, rfl⟩
+      cases j with
+      | zero =>
+        obtain ⟨q', rfl⟩ : ∃ q', q = q' + 1 := ⟨q - 1, by omega⟩
+        exact ⟨⟨K 0 (q' + 2), 0, q' + 2, by omega, rfl⟩, reset q'⟩
+      | succ j => exact ⟨⟨K (q + 1) j, q + 1, j, by omega, rfl⟩, subbounce q j⟩
+    · exact ⟨⟨K 0 1, 0, 1, by omega, rfl⟩, enters⟩
+  exact cs.nonHalting
+
+end SM2
+
+theorem sporadicMachine2_nonHalting : ¬ sporadicMachine2.halts init := SM2.nonHalting
 
 def sporadicMachine3 : Machine 4 1 := mach["1RB1LA_0LC0RE_---1LD_1RA0LC_1RA1RE"]
 theorem sporadicMachine3_nonHalting : ¬ sporadicMachine3.halts init := by
