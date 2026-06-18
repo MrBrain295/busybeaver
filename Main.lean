@@ -246,17 +246,13 @@ def bb4DefaultConfig: List DeciderConfig := [
   .nGramCPS { n := 1, bound := 100 },
   .nGramCPS { n := 2, bound := 200 },
   .nGramCPS { n := 3, bound := 400 },
-  .nGramCPSHistory { history := 2, left := 2, right := 2, bound := 1600 },
   .nGramCPSHistory { history := 2, left := 3, right := 3, bound := 1600 },
-  .nGramCPSHistory { history := 4, left := 2, right := 2, bound := 600 },
   .nGramCPSHistory { history := 4, left := 3, right := 3, bound := 1600 },
-  .nGramCPSHistory { history := 6, left := 2, right := 2, bound := 3200 },
   .nGramCPSHistory { history := 6, left := 3, right := 3, bound := 3200 },
-  .nGramCPSHistory { history := 8, left := 2, right := 2, bound := 1600 },
   .nGramCPSHistory { history := 8, left := 3, right := 3, bound := 1600 },
-  .nGramCPSLRU { left := 2, right := 2, bound := 10000 },
   .nGramCPSHistory { history := 10, left := 4, right := 4, bound := 10000 },
-  .repWL { len := 4, threshold := 3, maxT := 320, bound := 10000 }
+  .repWL { len := 2, threshold := 3, maxT := 320, bound := 2000 },
+  .repWL { len := 4, threshold := 3, maxT := 320, bound := 2000 }
 ]
 
 def bb5DefaultConfig: List DeciderConfig := [
