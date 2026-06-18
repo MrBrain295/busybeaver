@@ -134,7 +134,7 @@ lemma zigzag_pairs {q1 q2 : Label l} {a b c : Symbol s}
       (⟨q1, Tape.mk' (List.replicate (2 * t) a ++ L) (ListBlank.cons a R)⟩ : Config l s)
         -[M]{2 * t}->
       ⟨q1, Tape.mk' L (ListBlank.cons a (zigzagAcc b c t R))⟩
-  | 0, L, R => by simpa using Machine.Multistep.refl
+  | 0, L, R => by simpa [zigzagAcc] using Machine.Multistep.refl
   | t + 1, L, R => by
       have hblk : List.replicate (2 * (t + 1)) a ++ L
           = ListBlank.cons a (ListBlank.cons a (List.replicate (2 * t) a ++ L)) := by
