@@ -373,51 +373,31 @@ structure Conds (cfg : Config) (M : Machine 4 1) (nfa : NFASet) (acc : AccSet) :
 
 lemma conds_of {cfg : Config} {M : Machine 4 1} {nfa : NFASet} {acc : AccSet}
     (hc : checkConditions cfg M nfa acc = true) : Conds cfg M nfa acc := by
-  simp only [checkConditions, Bool.and_eq_true] at hc
+  simp only [checkConditions, Bool.and_eq_true, List.all_eq_true] at hc
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨hh0, hh⟩, hr⟩, hl⟩, hdfa0⟩, hacc0⟩, haccH⟩, haccClosed⟩, hdfaClosed⟩ := hc
   refine
-    { h0 := ?_, halt := ?_, right := ?_, left := ?_, dfa0 := ?_, acc0 := ?_,
-      accNone := ?_, accClosed := ?_, dfaClosed := ?_ }
-  · intro i
-    exact (List.all_eq_true.mp hh0) i (by simp [symbols])
+    { h0 := fun i => hh0 i (by simp [symbols]), halt := ?_, right := ?_, left := ?_,
+      dfa0 := by simpa using hdfa0, acc0 := hacc0, accNone := by simpa using haccH,
+      accClosed := ?_, dfaClosed := ?_ }
   · intro s0 u0 i0 hu heq
-    have h1 := (List.all_eq_true.mp hh) s0 (by simp [labels])
-    have h2 := (List.all_eq_true.mp h1) u0 hu
-    have h3 := (List.all_eq_true.mp h2) i0 (by simp [symbols])
-    rw [heq] at h3
-    exact h3
+    have := hh s0 (by simp [labels]) u0 hu i0 (by simp [symbols])
+    rwa [heq] at this
   · intro s0 u0 i0 i1 s1 hu heq
-    have h1 := (List.all_eq_true.mp hr) s0 (by simp [labels])
-    have h2 := (List.all_eq_true.mp h1) u0 hu
-    have h3 := (List.all_eq_true.mp h2) i0 (by simp [symbols])
-    rw [heq] at h3
-    exact h3
+    have := hr s0 (by simp [labels]) u0 hu i0 (by simp [symbols])
+    rwa [heq] at this
   · intro s0 i0 i1 s1 heq u1 hu i2 su2 su3 hsu2 hsu3 e1 e2
-    have h1 := (List.all_eq_true.mp hl) s0 (by simp [labels])
-    have h2 := (List.all_eq_true.mp h1) i0 (by simp [symbols])
-    rw [heq] at h2
-    have h3 := (List.all_eq_true.mp h2) u1 hu
-    have h4 := (List.all_eq_true.mp h3) i2 (by simp [symbols])
-    have h5 := (List.all_eq_true.mp h4) su2 hsu2
-    have h6 := (List.all_eq_true.mp h5) su3 hsu3
-    have e1' : nfaContains cfg nfa (some (s1, u1), i2, su2) = true := e1
-    have e2' : nfaContains cfg nfa (su2, i1, su3) = true := e2
-    rw [if_pos e1', if_pos e2'] at h6
-    exact h6
-  · simpa using hdfa0
-  · exact hacc0
-  · simpa using haccH
+    unfold Edge at e1 e2
+    have h := hl s0 (by simp [labels]) i0 (by simp [symbols])
+    simp only [heq, List.all_eq_true] at h
+    have h6 := h u1 hu i2 (by simp [symbols]) su2 hsu2 su3 hsu3
+    rwa [if_pos e1, if_pos e2] at h6
   · intro su0 su1 hsu0 hsu1 e hacc
-    have h1 := (List.all_eq_true.mp haccClosed) su0 hsu0
-    have h2 := (List.all_eq_true.mp h1) su1 hsu1
-    have e' : nfaContains cfg nfa (su0, 0, su1) = true := e
-    rw [if_pos e', if_pos hacc] at h2
-    exact h2
+    unfold Edge at e
+    have h2 := haccClosed su0 hsu0 su1 hsu1
+    rwa [if_pos e, if_pos hacc] at h2
   · intro u hu i
-    have hu' : u ∈ cfg.uList := by rw [Config.uList, List.mem_range]; exact hu
-    have h1 := (List.all_eq_true.mp hdfaClosed) u hu'
-    have h2 := (List.all_eq_true.mp h1) i (by simp [symbols])
-    exact of_decide_eq_true h2
+    exact of_decide_eq_true
+      (hdfaClosed u (by rw [Config.uList, List.mem_range]; exact hu) i (by simp [symbols]))
 
 lemma take_cons (a : Symbol 1) (L : Turing.ListBlank (Symbol 1)) (n : ℕ) :
     (L.cons a).take (n + 1) = a :: L.take n := by
@@ -544,15 +524,8 @@ lemma not_accepts_init {cfg : Config} {M : Machine 4 1} {nfa : NFASet} {acc : Ac
     cases i with
     | zero => rw [Turing.ListBlank.cons_nth_zero]; rfl
     | succ k => rw [Turing.ListBlank.cons_nth_succ, Turing.ListBlank.default_nth]; rfl
-  have hzeros := mem_take_eq_zero hz n
-  have hphi : phi cfg cd.dfa0 (TM.Table.init : TMConfig) = some (default, 0) := by
-    unfold phi
-    have h1 : (TM.Table.init : TMConfig).state = default := rfl
-    have h2 : (TM.Table.init : TMConfig).tape.left = (default : Turing.ListBlank (Symbol 1)) := rfl
-    rw [h1, h2, leftState_default]
-  have hacc0 : accContains cfg acc (phi cfg cd.dfa0 TM.Table.init) = true := by
-    rw [hphi]; exact cd.acc0
-  have hfin := reachL_zeros_acc cd hr hzeros hacc0
+  have hphi : phi cfg cd.dfa0 (TM.Table.init : TMConfig) = some (default, 0) := rfl
+  have hfin := reachL_zeros_acc cd hr (mem_take_eq_zero hz n) (hphi ▸ cd.acc0)
   rw [cd.accNone] at hfin
   simp at hfin
 
