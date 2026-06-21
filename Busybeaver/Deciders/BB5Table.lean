@@ -636,6 +636,368 @@ lemma step_reset0 (n : Num) (m : PosNum) (a : Symbol 1) (hinv : (n : ℕ) ≤ b 
         unfold f1; split_ifs <;> simp_all +decide [ b ] ;
       grind +suggestions
 
+/-! ## Reset cycle and non-halting (Coq `start_reset0` … `nonhalt`) -/
+
+/-- Coq `start_reset0`. -/
+lemma start_reset0 (n : Num) {m : PosNum} (h : All1 m) :
+    D n 0 m -[M]->+ E0 (Num.succ n) 1 m.succ := by
+  unfold D
+  refine Trans.trans (L_inc n _) (?_ : _ -[M]->+ _)
+  rw [L_as_K]
+  refine Trans.trans (Machine.Progress.single (step_right_mk' gB1 _ _)) (?_ : _ -[M]->* _)
+  refine Machine.EvStep.step (step_right_mk' gB0 _ _) ?_
+  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
+  refine Machine.EvStep.step (step_left_mk' gC0 _ _) ?_
+  refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
+  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
+  refine Machine.EvStep.step (step_right_mk' gA0 _ _) ?_
+  refine Machine.EvStep.step (step_right_mk' gB0 _ _) ?_
+  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
+  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
+  refine (R_inc_all1 h _).trans ?_
+  rw [headL_cons]
+  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
+  refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
+  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
+  refine Machine.EvStep.step (step_right_mk' gA0 _ _) ?_
+  refine Machine.EvStep.step (step_right_mk' gB0 _ _) ?_
+  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
+  refine Machine.EvStep.step (step_left_mk' gC0 _ _) ?_
+  refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
+  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
+  exact Machine.EvStep.step (step_left_head gA1 _ _) Machine.EvStep.refl
+
+/-
+`J (2*(n+1))` peels off four leading zeros.
+-/
+lemma J_double (n : Num) :
+    J (2 * (n + 1))
+      = ListBlank.cons 𝟘 (ListBlank.cons 𝟘 (ListBlank.cons 𝟘 (ListBlank.cons 𝟘 (J (n + 1))))) := by
+  cases n <;> simp +decide [ two_mul, Num.add ];
+  rename_i n;
+  rw [ show ( Num.pos n + 1 + ( Num.pos n + 1 ) : Num ) = Num.pos ( n + 1 |> PosNum.bit0 ) by
+        -- By definition of `Num.add`, we can rewrite the left-hand side as `Num.pos (n + 1 + (n + 1))`.
+        have h_add : Num.pos n + 1 + (Num.pos n + 1) = Num.pos (n + 1 + (n + 1)) := by
+          rfl;
+        convert h_add using 2;
+        exact Eq.symm (PosNum.bit0_of_bit0 (n + 1)) ];
+  exact ListBlank.ext (congrFun rfl)
+
+/-- Base case of `start_reset1` (`m = 1`). -/
+lemma start_reset1_base (n : Num) :
+    D n 1 1 -[M]->+ E1 (2 * (n + 1)) 0 1 := by
+  have hJ : J (2 * (n + 1))
+      = ListBlank.cons 𝟘 (ListBlank.cons 𝟘 (ListBlank.cons 𝟘 (ListBlank.cons 𝟘 (J (Num.succ n))))) := by
+    rw [← Num.add_one n]; exact J_double n
+  unfold D E1
+  refine Trans.trans (L_inc n _) (?_ : _ -[M]->+ _)
+  rw [L_as_J]
+  refine Trans.trans (Machine.Progress.single (step_right_mk' gB1 _ _)) (?_ : _ -[M]->* _)
+  refine Machine.EvStep.step (step_right_mk' gB0 _ _) ?_
+  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
+  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
+  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
+  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
+  refine Machine.EvStep.step (step_left_blank gC0d _) ?_
+  refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
+  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
+  refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
+  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
+  rw [hJ]
+  exact Machine.EvStep.step (step_left_head gA1 _ _) Machine.EvStep.refl
+
+/-- Inductive case of `start_reset1` (`m = bit1 m0`). -/
+lemma start_reset1_step (n : Num) (m0 : PosNum) (h0 : All1 m0) (m'' : PosNum)
+    (hm'' : m''.bit0 = m0.succ) :
+    D n 1 m0.bit1 -[M]->+ E1 (2 * (n + 1)) 0 m''.bit0 := by
+  have hR : R (m0.bit1).succ
+      = ListBlank.cons 𝟙 (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 (ListBlank.cons 𝟘 (R m'')))) := by
+    have h1 : (m0.bit1).succ = (m''.bit0).bit0 := by rw [show (m0.bit1).succ = (m0.succ).bit0 from rfl, ← hm'']
+    rw [h1]; simp only [R]
+  have hJ : J (2 * (n + 1))
+      = ListBlank.cons 𝟘 (ListBlank.cons 𝟘 (ListBlank.cons 𝟘 (ListBlank.cons 𝟘 (J (Num.succ n))))) := by
+    rw [← Num.add_one n]; exact J_double n
+  unfold D E1
+  refine Trans.trans (L_inc n _) (?_ : _ -[M]->+ _)
+  rw [L_as_J]
+  refine Trans.trans (Machine.Progress.single (step_right_mk' gB1 _ _)) (?_ : _ -[M]->* _)
+  refine Machine.EvStep.step (step_right_mk' gB0 _ _) ?_
+  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
+  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
+  refine (R_inc_all1 (All1.bit1 h0)
+    (ListBlank.cons 𝟙 (ListBlank.cons 𝟙 (ListBlank.cons 𝟘 (ListBlank.cons 𝟘 (ListBlank.cons 𝟘 (ListBlank.cons 𝟘 (J (Num.succ n))))))))).trans ?_
+  rw [hR, headL_cons]
+  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
+  rw [hJ]
+  exact Machine.EvStep.step (step_left_head gA1 _ _) Machine.EvStep.refl
+
+/-- Coq `start_reset1`. -/
+lemma start_reset1 (n : Num) {m : PosNum} (h : All1 m) :
+    ∃ m' : PosNum, m'.bit0 = m.succ ∧ D n 1 m -[M]->+ E1 (2 * (n + 1)) 0 m' := by
+  induction h with
+  | one => exact ⟨1, rfl, start_reset1_base n⟩
+  | @bit1 m0 h0 ih =>
+      obtain ⟨m'', hm'', _⟩ := ih
+      exact ⟨m''.bit0, by rw [show (PosNum.bit1 m0).succ = (m0.succ).bit0 from rfl, hm''],
+        start_reset1_step n m0 h0 m'' hm''⟩
+
+/-
+Coq `do_reset0`.
+-/
+lemma do_reset0 (n : Num) (m : PosNum) (a : Symbol 1)
+    (hinv : (n : ℕ) ≤ b m) (hpos : 0 < (n : ℕ)) :
+    ∃ m' : PosNum, (E0 n a m -[M]->* E0 0 1 m') ∧ reset_invariant m' := by
+  revert n m a hinv hpos;
+  -- We'll use strong induction on `n`.
+  have h_ind : ∀ n : ℕ, ∀ (n' : Num) (m : PosNum) (a : Symbol 1), (n' : ℕ) = n → (n' : ℕ) ≤ b m → 0 < (n' : ℕ) → ∃ m' : PosNum, (E0 n' a m -[M]->* E0 0 1 m') ∧ reset_invariant m' := by
+    intro n
+    induction' n using Nat.strong_induction_on with n ih;
+    intro n' m a hn' hinv hpos;
+    obtain ⟨ n'', m'', h₁, h₂, h₃, h₄ ⟩ := step_reset0 n' m a hinv hpos;
+    by_cases h₅ : 0 < (n'' : ℕ);
+    · obtain ⟨ m''', h₆, h₇ ⟩ := ih ( n'' : ℕ ) ( by linarith ) n'' m'' 1 rfl h₃ h₅; exact ⟨ m''', h₁.trans h₆, h₇ ⟩ ;
+    · cases n'' <;> aesop;
+  exact fun n m a h₁ h₂ => h_ind _ _ _ _ rfl h₁ h₂
+
+/-
+Coq `pow4_shift1`.
+-/
+lemma pow4_shift1 (k : ℕ) (n : PosNum) : pow4 k n.bit0 = (pow4 k n).bit0 := by
+  induction' k with k ih generalizing n <;> simp_all +decide [ pow4 ]
+
+/-- Reachability step of `step_reset1` (the `drop_JI` sweep). -/
+lemma step_reset1_run (k : ℕ) (n' : Num) (m : PosNum) (a : Symbol 1)
+    (hb : 2 ^ (k + 1) - 1 ≤ b m) :
+    E1 (2 ^ (k + 1) + 2 ^ (k + 1 + 1) * n') a m
+      -[M]->* E0 n' 0 ((pow4 k (f m a (k + 1)).succ).bit0) := by
+  unfold E1 E0
+  rw [prepare_J (k + 1) n', K_as_J]
+  refine (drop_JI a hb (ListBlank.cons 𝟘 (ListBlank.cons 𝟘 (J n')))).trans ?_
+  have hp : pow4 (k + 1) (f m a (k + 1)).succ
+      = ((pow4 k (f m a (k + 1)).succ).bit0).bit0 := by
+    rw [pow4, pow4_shift]
+  rw [hp]
+  exact Machine.EvStep.refl
+
+/-- `b ((f m a (k+1)).succ) = 2 * b (f1 m a (k+1))`. -/
+lemma b_f_succ (m : PosNum) (a : Symbol 1) (k : ℕ) :
+    b (f m a (k + 1)).succ = 2 * b (f1 m a (k + 1)) := by
+  rw [f_as_f1]
+  show b (PosNum.bit1 (f1 m a (k + 1))) = _
+  simp only [b]
+
+/-
+Strict decrease of `step_reset1`.
+-/
+lemma step_reset1_dec (k : ℕ) (n n' : Num) (hn_eq : n = 2 ^ (k + 1) + 2 ^ (k + 2) * n') :
+    (n' : ℕ) < (n : ℕ) := by
+  rw [ hn_eq ];
+  -- Since $2^{k+2} \geq 1$, we have $n' < 2^{k+1} + 2^{k+2} * n'$.
+  have h_ineq : (n' : ℕ) < 2^(k+1) + 2^(k+2) * (n' : ℕ) := by
+    nlinarith [ pow_pos ( by decide : 0 < 2 ) ( k + 1 ), pow_pos ( by decide : 0 < 2 ) ( k + 2 ), show ( n' : ℕ ) ≥ 0 by exact Nat.zero_le _ ];
+  convert h_ineq using 1;
+  norm_num [ Num.add, Num.mul ];
+  congr;
+  · induction k + 1 <;> simp_all +decide [ pow_succ' ];
+  · induction k + 2 <;> simp_all +decide [ pow_succ' ]
+
+/-
+`b`-distance bound of `step_reset1`.
+-/
+lemma step_reset1_bbound (k : ℕ) (n n' : Num) (m : PosNum) (a : Symbol 1)
+    (hle : (n : ℕ) ≤ 4 * b m) (hn_eq : n = 2 ^ (k + 1) + 2 ^ (k + 2) * n')
+    (hbound : 2 ^ (k + 1) ≤ b m) :
+    (n' : ℕ) ≤ b (pow4 k (f m a (k + 1)).succ).bit0 := by
+  -- From `hn_eq`, we have `2^(k+2) * n' ≤ 4 * b m`.
+  have h_le : 2 ^ (k + 2) * (n' : ℕ) ≤ 4 * (b m : ℕ) := by
+    convert Nat.le_trans _ hle using 1;
+    convert Nat.le_add_left _ _;
+    convert congr_arg ( fun x : Num => ( x : ℕ ) ) hn_eq using 1;
+    swap;
+    exact 2 ^ ( k + 1 );
+    norm_num [ Num.add, Num.mul ];
+    congr;
+    · induction k + 1 <;> simp_all +decide [ pow_succ' ];
+    · induction k + 2 <;> simp_all +decide [ pow_succ' ];
+  -- By definition of $f1$, we know that $b (f1 m a (k + 1)) \geq b m - (2 ^ (k + 1) - 1)$.
+  have h_f1_ge : b (f1 m a (k + 1)) ≥ b m - (2 ^ (k + 1) - 1) := by
+    have h_f1_ge : b (addN (2 ^ (k + 1) - 1) m) = b m - (2 ^ (k + 1) - 1) := by
+      apply b_add; exact Nat.sub_le_of_le_add (by linarith);
+    unfold f1; split_ifs <;> simp_all +decide [ b ] ;
+    · omega;
+    · omega;
+  have h_pow4_ge : b (pow4 k (f m a (k + 1)).succ) ≥ 2 ^ (2 * k) * (2 * (b m - (2 ^ (k + 1) - 1)) + 1) - 1 := by
+    have h_pow4_ge : b (pow4 k (f m a (k + 1)).succ) = 2 ^ (2 * k) * (b (f m a (k + 1)).succ + 1) - 1 := by
+      convert b_pow4 k ( f m a ( k + 1 ) ).succ using 1;
+    have h_f_ge : b (f m a (k + 1)).succ = 2 * b (f1 m a (k + 1)) := by
+      exact b_f_succ m a k;
+    exact h_pow4_ge.symm ▸ Nat.sub_le_sub_right ( Nat.mul_le_mul_left _ ( by linarith ) ) _;
+  simp_all +decide [ pow_succ', pow_mul' ];
+  rw [ show b ( pow4 k ( f m a ( k + 1 ) ).succ ).bit0 = 2 * b ( pow4 k ( f m a ( k + 1 ) ).succ ) + 1 from ?_ ];
+  · zify at *;
+    rw [ Nat.cast_sub ] at * <;> push_cast at *;
+    · erw [ Nat.cast_sub ] at * <;> push_cast at * <;> repeat nlinarith only [ h_le, h_pow4_ge, hbound, pow_pos ( zero_lt_two' ℕ ) k ] ;
+      nlinarith [ pow_pos ( zero_lt_two' ℤ ) k, pow_two ( 2 ^ k - 1 : ℤ ) ];
+    · exact Nat.one_le_iff_ne_zero.mpr ( by positivity );
+    · exact Nat.sub_le_of_le_add <| by linarith;
+  · exact Eq.symm (Nat.add_succ (2 * b (pow4 k (f m a (k + 1)).succ)) 0)
+
+/-- `reset_invariant` part of `step_reset1`. -/
+lemma step_reset1_inv (k : ℕ) (m : PosNum) (a : Symbol 1) (hbound : 2 ^ (k + 1) ≤ b m) :
+    reset_invariant (pow4 k (f m a (k + 1)).succ).bit0 := by
+  have hbz : b (f m a (k + 1)).succ = 2 * b (f1 m a (k + 1)) := b_f_succ m a k
+  have hbp : b (pow4 k (f m a (k + 1)).succ)
+      = 2 ^ (2 * k) * (b (f m a (k + 1)).succ + 1) - 1 := b_pow4 k _
+  have hbit : b (pow4 k (f m a (k + 1)).succ).bit0
+      = 2 * b (pow4 k (f m a (k + 1)).succ) + 1 := by
+    show b (PosNum.bit0 _) = _; simp only [b]
+  have hpk : 1 ≤ 2 ^ (k + 1) := Nat.one_le_two_pow
+  have hD : b (addN (2 ^ (k + 1) - 1) m) = b m - (2 ^ (k + 1) - 1) := b_add _ (by omega)
+  have hf1ge : 2 ≤ b (f1 m a (k + 1)) := by
+    unfold f1; split_ifs <;> simp only [b] <;> omega
+  refine ⟨?_, 2 * k + 1, b (f1 m a (k + 1)), ?_, hf1ge⟩
+  · have h1 : (1 : ℕ) ≤ (pow4 k (f m a (k + 1)).succ : ℕ) :=
+      (pow4 k (f m a (k + 1)).succ).one_le_cast
+    have he : ((pow4 k (f m a (k + 1)).succ).bit0 : ℕ)
+        = 2 * (pow4 k (f m a (k + 1)).succ : ℕ) := by
+      simp [PosNum.cast_bit0, two_mul]
+    omega
+  · have hXge : 1 ≤ 2 ^ (2 * k) * (b (f m a (k + 1)).succ + 1) :=
+      Nat.one_le_iff_ne_zero.mpr (by positivity)
+    have hp1 : b (pow4 k (f m a (k + 1)).succ) + 1
+        = 2 ^ (2 * k) * (b (f m a (k + 1)).succ + 1) := by rw [hbp]; omega
+    have e1 : 2 ^ (2 * k + 1) = 2 * 2 ^ (2 * k) := by rw [pow_succ]; ring
+    have e2 : 2 ^ (2 * k + 2) = 4 * 2 ^ (2 * k) := by rw [pow_add]; ring
+    rw [hbit, show 2 * b (pow4 k (f m a (k + 1)).succ) + 1 + 1
+        = 2 * (b (pow4 k (f m a (k + 1)).succ) + 1) from by ring, hp1, hbz, e1, e2]
+    ring
+
+/-- Coq `step_reset1`. -/
+lemma step_reset1 (n : Num) (m : PosNum) (a : Symbol 1)
+    (hle : (n : ℕ) ≤ 4 * b m)
+    (hex : ∃ (k : ℕ) (n' : Num), n = 2 ^ (k + 1) + 2 ^ (k + 2) * n' ∧ 2 ^ (k + 1) ≤ b m) :
+    ∃ (n' : Num) (m' : PosNum),
+      (E1 n a m -[M]->* E0 n' 0 m') ∧ (n' : ℕ) < (n : ℕ) ∧ (n' : ℕ) ≤ b m' ∧ reset_invariant m' := by
+  obtain ⟨k, n', hn_eq, hbound⟩ := hex
+  refine ⟨n', (pow4 k (f m a (k + 1)).succ).bit0, ?_, ?_, ?_, ?_⟩
+  · rw [hn_eq]
+    exact step_reset1_run k n' m a (by omega)
+  · exact step_reset1_dec k n n' hn_eq
+  · exact step_reset1_bbound k n n' m a hle hn_eq hbound
+  · exact step_reset1_inv k m a hbound
+
+/-
+Coq `do_reset1`.
+-/
+lemma do_reset1 (n : Num) (m : PosNum) (a : Symbol 1)
+    (hle : (n : ℕ) ≤ 4 * b m)
+    (hex : ∃ (k : ℕ) (n' : Num), n = 2 ^ (k + 1) + 2 ^ (k + 2) * n' ∧ 2 ^ (k + 1) ≤ b m) :
+    ∃ (m' : PosNum) (a' : Symbol 1), (E1 n a m -[M]->* E0 0 a' m') ∧ reset_invariant m' := by
+  -- Use `step_reset1` to obtain `n', m'` with `E1 n a m -[M]->* E0 n' 0 m'`, `(n':ℕ) < (n:ℕ)`, `(n':ℕ) ≤ b m'`, `reset_invariant m'`.
+  obtain ⟨n', m', Hsteps, Hless, Hinv⟩ := step_reset1 n m a hle hex;
+  by_cases hn' : 0 < (n' : ℕ);
+  · obtain ⟨ m'', Hsteps', Hinv' ⟩ := do_reset0 n' m' 0 Hinv.1 hn';
+    exact ⟨ m'', 1, Hsteps.trans Hsteps', Hinv' ⟩;
+  · cases n' <;> aesop
+
+/-- Coq `D0_next`. -/
+lemma D0_next (m : PosNum) :
+    ∃ m' : PosNum, (D 0 0 m -[M]->+ D 0 1 m') ∧ reset_invariant m' := by
+  have hall : All1 (addN (b m) m) := b0_all1 (b_add_self m)
+  have hsucc : b (addN (b m) m).succ = (addN (b m) m : ℕ) := b0_succ (b_add_self m)
+  have hle : ((Num.succ (b m : Num) : Num) : ℕ) ≤ b (addN (b m) m).succ := by
+    rw [hsucc, Num.cast_succ, Num.to_of_nat, addN_cast]
+    have : (1 : ℕ) ≤ (m : ℕ) := m.one_le_cast; omega
+  have hpos : 0 < ((Num.succ (b m : Num) : Num) : ℕ) := by
+    rw [Num.cast_succ]; omega
+  obtain ⟨m', hsteps, hinv⟩ :=
+    do_reset0 (Num.succ (b m : Num)) (addN (b m) m).succ 1 hle hpos
+  refine ⟨m', ?_, hinv⟩
+  have c1 : D 0 0 m -[M]->* D (b m : Num) 0 (addN (b m) m) := by
+    have h := @D_finish 0 0 m; simpa using h
+  have c2 : D (b m : Num) 0 (addN (b m) m)
+      -[M]->+ E0 (Num.succ (b m : Num)) 1 (addN (b m) m).succ := start_reset0 (b m : Num) hall
+  exact Trans.trans (Trans.trans c1 c2) hsteps
+
+/-
+Coq `D1_next`.
+-/
+lemma D1_next (m : PosNum) (hinv : reset_invariant m) :
+    ∃ (m' : PosNum) (a' : Symbol 1), (D 0 1 m -[M]->+ D 0 a' m') ∧ reset_invariant m' := by
+  obtain ⟨hm2, k, n', heq, hn'2⟩ := hinv;
+  -- Let `m0 := addN (b m) m`; `All1 m0` by `b0_all1 (b_add_self m)`.
+  set m0 := addN (b m) m with hm0
+  have hm0_all1 : All1 m0 := b0_all1 (b_add_self m);
+  -- Apply `start_reset1 (b m : Num) (this All1)` to get `m'`, `hm' : m'.bit0 = m0.succ`, and `H1 : D (b m : Num) 1 m0 -[M]->+ E1 (2*((b m:Num)+1)) 0 m'`.
+  obtain ⟨m', hm', H1⟩ := start_reset1 (b m : Num) hm0_all1;
+  -- Now apply `do_reset1 (2*((b m:Num)+1)) m' 0` providing:
+  -- - `hle : ((2*((b m:Num)+1):Num):ℕ) ≤ 4 * b m'`: the LHS casts to `2*(b m + 1)` (push the Num→ℕ cast with `Num.to_of_nat`); from `hbm'` (so `2*b m' = b m + (m:ℕ) - 1 ≥ b m + 1` since `(m:ℕ) ≥ 2`) conclude by `omega`.
+  have hle : ((2 * ((b m : Num) + 1) : Num) : ℕ) ≤ 4 * b m' := by
+    have hbm' : 2 * b m' + 1 = b m + (m : ℕ) := by
+      convert congr_arg b hm' using 1;
+      rw [ b0_succ ( b_add_self m ), addN_cast ];
+    norm_num +zetaDelta at *;
+    exact show 2 * ( b m + 1 ) ≤ 4 * b m' from by show ( 2 : ℕ ) * ( b m + 1 ) ≤ 4 * b m'; linarith! [ show ( m : ℕ ) ≥ 2 by assumption ] ;
+  obtain ⟨m'', a'', H2, hreset⟩ := do_reset1 (2 * ((b m : Num) + 1)) m' 0 hle ⟨k, n', by
+    norm_cast;
+    grind, by
+    have hkey : 2 * b m' + 2 = 2 ^ k + 2 ^ (k + 1) * n' + (m : ℕ) := by
+      have hkey : 2 * b m' + 1 = b m + (m : ℕ) := by
+        convert congr_arg b hm' using 1;
+        rw [ b0_succ ( b_add_self m ), addN_cast ];
+      linarith;
+    nlinarith [ Nat.pow_le_pow_right two_pos ( show k + 1 ≥ 1 by linarith ), Nat.pow_le_pow_right two_pos ( show k ≥ 0 by linarith ) ]⟩
+  generalize_proofs at *;
+  refine' ⟨ m'', a'', _, hreset ⟩;
+  have h_trans : D 0 1 m -[M]->* D (b m : Num) 1 m0 := by
+    convert D_finish using 1;
+    norm_num +zetaDelta at *;
+  exact Trans.trans ( Trans.trans h_trans H1 ) H2
+
+/-
+Coq `D_next`.
+-/
+lemma D_next (m : PosNum) (a : Symbol 1) (hinv : reset_invariant m) :
+    ∃ (m' : PosNum) (a' : Symbol 1), (D 0 a m -[M]->+ D 0 a' m') ∧ reset_invariant m' := by
+  rcases a with ( _ | _ | a );
+  · exact Exists.elim ( D0_next m ) fun m' hm' => ⟨ m', 1, hm'.1, hm'.2 ⟩;
+  · convert D1_next m hinv using 1;
+  · contradiction
+
+/-- `n`-fold application of the machine step (computable). -/
+private def stepN : ℕ → Config 4 1 → Option (Config 4 1)
+  | 0, c => some c
+  | n + 1, c => (Machine.step M c).bind (stepN n)
+
+/-- A successful `stepN` run yields an `EvStep` reachability. -/
+private lemma stepN_evstep : ∀ (n : ℕ) {c d : Config 4 1}, stepN n c = some d → c -[M]->* d
+  | 0, c, d, h => by
+      simp only [stepN, Option.some.injEq] at h; subst h; exact Machine.EvStep.refl
+  | n + 1, c, d, h => by
+      rw [stepN] at h
+      cases hc : Machine.step M c with
+      | none => rw [hc] at h; simp at h
+      | some c1 =>
+          rw [hc] at h
+          exact Machine.EvStep.step hc (stepN_evstep n h)
+
+/-- `init` reaches `D 0 0 11` (Coq `c0 -->* D 0 0 11`). -/
+lemma enters : init -[M]->* D 0 0 11 := by
+  refine stepN_evstep 85 ?_
+  native_decide
+
+/-- Skelet #26 (`sporadicMachine9`) does not halt (Coq `nonhalt`). -/
+theorem nonHalting : ¬ M.halts init := by
+  have cs : ClosedSet M
+      (fun C => ∃ (m : PosNum) (a : Symbol 1), reset_invariant m ∧ C = D 0 a m) init := by
+    refine ⟨?_, ?_⟩
+    · rintro ⟨C, m, a, hinv, rfl⟩
+      obtain ⟨m', a', hstep, hinv'⟩ := D_next m a hinv
+      exact ⟨⟨D 0 a' m', m', a', hinv', rfl⟩, hstep⟩
+    · obtain ⟨m', hstep, hinv'⟩ := D0_next 11
+      exact ⟨⟨D 0 1 m', m', 1, hinv', rfl⟩, enters.trans hstep.to_evstep⟩
+  exact cs.nonHalting
+
 end Deciders.Skelet.Skelet26
 end Skelet26Inline
 
@@ -1775,8 +2137,8 @@ theorem sporadicMachine8_nonHalting : ¬ sporadicMachine8.halts init := by
   sorry
 
 def sporadicMachine9 : Machine 4 1 := mach["1RB1LD_1RC0RB_1LA1RC_1LE0LA_1LC---"]
-theorem sporadicMachine9_nonHalting : ¬ sporadicMachine9.halts init := by
-  sorry
+theorem sporadicMachine9_nonHalting : ¬ sporadicMachine9.halts init :=
+  Deciders.Skelet.Skelet26.nonHalting
 
 def sporadicMachine10 : Machine 4 1 := mach["1RB1LC_0RC0RB_1LD0LA_1LE---_1LA1RE"]
 theorem sporadicMachine10_nonHalting : ¬ sporadicMachine10.halts init := by
