@@ -5,48 +5,27 @@ instance: Fintype Turing.Dir := by {
   exact {
     toFun := λ b ↦ if b then .left else .right
     invFun := λ t ↦ match t with | .left => true | .right => false
-    left_inv := by {
-      unfold Function.LeftInverse
-      intro b
-      cases b <;> simp
-    }
-    right_inv := by {
-      simp only [Function.RightInverse, Function.LeftInverse]
-      intro t
-      cases t <;> simp
-    }
+    left_inv := by intro b; cases b <;> rfl
+    right_inv := by intro t; cases t <;> rfl
   }
 }
 
 instance Turing.BlankExtends.instDecidableRel {Γ} [Inhabited Γ] [DecidableEq Γ] : DecidableRel (@Turing.BlankExtends Γ _)
-  | [], ys => decidable_of_iff (∀ y ∈ ys, y = default) (by {
-    simp [Turing.BlankExtends]
-    constructor
-    · intro hy
-      exists ys.length
-      exact List.eq_replicate_of_mem hy
-    · intro ⟨n, hn⟩ y hy
-      apply List.eq_of_mem_replicate
-      rw [hn] at hy
-      exact hy
-  })
+  | [], ys => decidable_of_iff (∀ y ∈ ys, y = default) (by
+      simp only [Turing.BlankExtends, List.nil_append]
+      exact ⟨fun hy => ⟨ys.length, List.eq_replicate_of_mem hy⟩,
+             fun ⟨n, hn⟩ y hy => List.eq_of_mem_replicate (hn ▸ hy)⟩)
   | x :: xs, [] => .isFalse (by simp [Turing.BlankExtends])
   | x :: xs, y :: ys =>
     letI := instDecidableRel xs ys
     decidable_of_iff (x = y ∧ Turing.BlankExtends xs ys) (by {
       simp [Turing.BlankExtends]
       intro n _
-      constructor <;> {
-        intro h
-        exact h.symm
-      }
+      exact ⟨(·.symm), (·.symm)⟩
     })
 
-instance Turing.BlankRel.instDecidableRel {Γ} [Inhabited Γ] [DecidableEq Γ]: DecidableRel (@Turing.BlankRel Γ _) := by {
-  simp [Turing.BlankRel, DecidableRel]
-  intro a b
-  apply instDecidableOr
-}
+instance Turing.BlankRel.instDecidableRel {Γ} [Inhabited Γ] [DecidableEq Γ]: DecidableRel (@Turing.BlankRel Γ _) :=
+  fun a b => by unfold Turing.BlankRel; infer_instance
 
 
 namespace Turing.ListBlank
@@ -73,34 +52,13 @@ by induction T using Turing.ListBlank.induction_on; simp
 
 @[simp]
 lemma cons_injective {T T': Turing.ListBlank Γ} {g g': Γ}: cons g T = cons g' T' ↔ g = g' ∧ T = T' :=
-by {
-  constructor
-  swap
-  · intro ⟨hg, hT⟩
-    rw [hg, hT]
-  intro hg
-  constructor
-  · rw [
-      show g = (cons g T).head by simp,
-      show g' = (cons g' T').head by simp,
-      hg
-    ]
-  · rw [
-      show T = (cons g T).tail by simp,
-      show T' = (cons g' T').tail by simp,
-      hg
-    ]
-}
+  ⟨fun h => ⟨by rw [← head_cons g T, ← head_cons g' T', h],
+            by rw [← tail_cons g T, ← tail_cons g' T', h]⟩,
+   fun ⟨hg, hT⟩ => by rw [hg, hT]⟩
 
 @[simp]
 lemma cons_default_empty: cons default ∅ = (∅: Turing.ListBlank Γ) :=
-by {
-  ext i
-  cases i <;> {
-    simp
-    rfl
-  }
-}
+by ext i; cases i <;> (simp; rfl)
 
 @[simp]
 lemma append_mk_nth {L: List Γ} {T: Turing.ListBlank Γ}:
@@ -108,15 +66,15 @@ lemma append_mk_nth {L: List Γ} {T: Turing.ListBlank Γ}:
 by
   induction T using Turing.ListBlank.induction_on with
   | h T =>
-      change (Turing.ListBlank.append L (Turing.ListBlank.mk T)).nth i =
-        if _ : i < L.length then L[i] else (Turing.ListBlank.mk T).nth (i - L.length)
-      by_cases h' : i < L.length
-      · rw [Turing.ListBlank.append_mk, Turing.ListBlank.nth_mk, List.getI_append _ _ _ h',
-          List.getI_eq_getElem _ h']
-        simp [h']
-      · have hle : L.length ≤ i := Nat.le_of_not_lt h'
-        rw [Turing.ListBlank.append_mk, Turing.ListBlank.nth_mk, List.getI_append_right _ _ _ hle]
-        simp [h']
+    by_cases h' : i < L.length
+    · rw [show (L ++ Turing.ListBlank.mk T) = Turing.ListBlank.append L (Turing.ListBlank.mk T) from rfl,
+        Turing.ListBlank.append_mk, Turing.ListBlank.nth_mk, List.getI_append _ _ _ h',
+        List.getI_eq_getElem _ h']
+      simp [h']
+    · rw [show (L ++ Turing.ListBlank.mk T) = Turing.ListBlank.append L (Turing.ListBlank.mk T) from rfl,
+        Turing.ListBlank.append_mk, Turing.ListBlank.nth_mk,
+        List.getI_append_right _ _ _ (Nat.le_of_not_lt h')]
+      simp [h']
 
 @[simp]
 lemma default_nth: (default: Turing.ListBlank Γ).nth i = default :=
@@ -132,11 +90,7 @@ lemma append_cons {T: Turing.ListBlank Γ} {L: List Γ} {g: Γ}: g :: L ++ T = T
 
 @[simp]
 lemma append_nth {T: Turing.ListBlank Γ} {L: List Γ}: (L ++ T).nth n = if h: n < L.length then L[n]'h else T.nth (n - L.length) :=
-by
-  classical
-  by_cases h : n < L.length
-  · simp [append_mk_nth, h]
-  · simp [append_mk_nth, h]
+  append_mk_nth
 
 @[simp]
 lemma liftOn_mk {L: List Γ}: Turing.ListBlank.liftOn (Turing.ListBlank.mk L) f prf = f L :=
@@ -144,30 +98,13 @@ lemma liftOn_mk {L: List Γ}: Turing.ListBlank.liftOn (Turing.ListBlank.mk L) f 
 
 @[simp]
 lemma mk_eq_mk {L L': List Γ}: Turing.ListBlank.mk L = Turing.ListBlank.mk L' ↔ Turing.BlankRel L L' :=
-by {
-  constructor
-  · intro h
-    exact Quotient.exact' h
-  · intro h
-    exact Quotient.sound' h
-}
+  ⟨fun h => Quotient.exact' h, fun h => Quotient.sound' h⟩
 
 /--
 If two list blanks are different, then by [Classical.choice] they differ at some point.
 -/
-lemma ne_exists_different {Lb Lb': Turing.ListBlank Γ}: Lb ≠ Lb' ↔ ∃n, Lb.nth n ≠ Lb'.nth n :=
-by {
-  constructor
-  · intro hn
-    simp at hn
-    rw [Turing.ListBlank.ext_iff] at hn
-    push Not at hn
-    exact hn
-  · intro ⟨n, hn⟩ hL
-    rw [Turing.ListBlank.ext_iff] at hL
-    specialize hL n
-    contradiction
-}
+lemma ne_exists_different {Lb Lb': Turing.ListBlank Γ}: Lb ≠ Lb' ↔ ∃n, Lb.nth n ≠ Lb'.nth n := by
+  rw [Ne, Turing.ListBlank.ext_iff, not_forall]
 
 def meet_blank [DecidableEq Γ]: List Γ → List Γ → List Γ
 | [], [] => []
@@ -177,36 +114,22 @@ termination_by L L' => L.length + L'.length
 
 lemma meet_blank.commutative [DecidableEq Γ] {L L': List Γ}: meet_blank L L' = meet_blank L' L :=
 by induction L, L' using meet_blank.induct with simp_all [meet_blank]
-| case7 head tail head' tail' hne => {
-  push Not at hne
-  symm at hne
-  simp [hne]
-}
+| case7 head tail head' tail' hne => simp [Ne.symm hne]
 
 @[simp]
 lemma meet_blank.replicate_default_left [DecidableEq Γ]: meet_blank [] (List.replicate n default) = List.replicate n (default: Γ) :=
 by induction n with
 | zero => simp [meet_blank]
-| succ n IH => {
-  simp [List.replicate_succ, meet_blank]
-  rw [commutative]
-  exact IH
-}
+| succ n IH => simp [List.replicate_succ, meet_blank]; rw [commutative]; exact IH
 
 @[simp]
 lemma meet_blank.replicate_default_right [DecidableEq Γ]: meet_blank (List.replicate n default) [] = List.replicate n (default: Γ) :=
-by {
-  rw [commutative]
-  exact replicate_default_left
-}
+by rw [commutative]; exact replicate_default_left
 
 private lemma meet_blank.blank_extends [DecidableEq Γ] {L L': List Γ} (h: BlankExtends L L'): meet_blank L L' = L' :=
-by {
-  simp [BlankExtends] at h
-  obtain ⟨n, hn⟩ := h
-  cases hn
+by
+  obtain ⟨n, rfl⟩ := h
   induction L <;> simp_all [meet_blank]
-}
 
 @[simp]
 def take (Lb: Turing.ListBlank Γ): ℕ → List Γ
@@ -220,17 +143,8 @@ lemma take.length {Lb: Turing.ListBlank Γ}: (Lb.take n).length = n :=
 @[simp]
 def take_nth {Lb: Turing.ListBlank Γ} {n i: ℕ} (h: i < n): (Lb.take n)[i]'(by simp [h]) = Lb.nth i :=
 by induction i generalizing n Lb with
-| zero => {
-  simp
-  cases n <;> simp at h
-  simp
-}
-| succ i IH => {
-  simp
-  cases n <;> simp at h
-  simp
-  exact IH h
-}
+| zero => cases n with | zero => omega | succ n => simp
+| succ i IH => cases n with | zero => omega | succ n => simpa using IH (Nat.lt_of_succ_lt_succ h)
 
 @[simp]
 def drop (Lb: Turing.ListBlank Γ): ℕ → ListBlank Γ
@@ -241,34 +155,23 @@ def drop (Lb: Turing.ListBlank Γ): ℕ → ListBlank Γ
 lemma drop_nth {Lb: Turing.ListBlank Γ}: (Lb.drop n).nth n' = Lb.nth (n + n') :=
 by induction n generalizing Lb with
 | zero => simp
-| succ n IH => {
-  simp
-  rw [IH, ← Turing.ListBlank.nth_succ]
-  congr 1
-  exact Nat.add_right_comm n n' 1
-}
+| succ n IH => simp only [drop]; rw [IH, ← Turing.ListBlank.nth_succ]; congr 1; omega
 
 lemma append_take_drop {Lb: Turing.ListBlank Γ}: (Lb.take n) ++ (Lb.drop n) = Lb :=
-by {
+by
   ext i
   simp
   split
-  · rename_i h
-    simp [take_nth h]
-  · rename_i heq
-    congr 1
-    push Not at heq
-    exact Nat.add_sub_of_le heq
-}
+  · rename_i h; simp [take_nth h]
+  · rename_i heq; congr 1; omega
 
 end Turing.ListBlank
 
-instance Turing.Tape.instDecidableEq {Γ} [Inhabited Γ] [DecidableEq Γ]: DecidableEq (Turing.Tape Γ) := by {
+instance Turing.Tape.instDecidableEq {Γ} [Inhabited Γ] [DecidableEq Γ]: DecidableEq (Turing.Tape Γ) := by
   unfold DecidableEq
-  intro ⟨ha, La, Ra⟩ ⟨hb, Lb, Rb⟩
-  simp
-  repeat apply instDecidableAnd
-}
+  rintro ⟨ha, La, Ra⟩ ⟨hb, Lb, Rb⟩
+  simp only [Turing.Tape.mk.injEq]
+  infer_instance
 
 namespace Turing.Dir
 instance: Repr Turing.Dir where
