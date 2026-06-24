@@ -143,55 +143,44 @@ NGram, RepWL, halt, Loop1, FAR, WFAR, and sporadic entries.
 The library/proofs are contained in [Busybeaver](./Busybeaver/):
 
 - [Basic.lean](./Busybeaver/Basic.lean) contains the base definition of Turing machines
-- [Reachability.lean](./Busybeaver/Reachability.lean) contains many definitions related to reachability in TMs
 - [Problem.lean](./Busybeaver/Problem.lean) contains the definition of the busy beaver problem
-- [ClosedSet.lean](./Busybeaver/ClosedSet.lean) defines a tool to prove non-halting based on [Closed Sets](https://wiki.bbchallenge.org/wiki/Closed_Set). It also provides the very convenient `closed_set` tactic, to call within the proofs.
-- [Partial.lean](./Busybeaver/Partial.lean) defines TMs steps on finite tapes.
+- [TM](./Busybeaver/TM/) holds the machine abstractions: `Model/` is the
+  opaque higher-level machine interface and `Table/` is the base tabular
+  machine. Both provide a `Reachability.lean` and a `ClosedSet.lean`; the
+  latter defines a tool to prove non-halting based on [Closed
+  Sets](https://wiki.bbchallenge.org/wiki/Closed_Set) and exposes the very
+  convenient `closed_set` tactic
+  ([TM/Table/ClosedSet.lean](./Busybeaver/TM/Table/ClosedSet.lean)).
 - [Enumerate](./Busybeaver/Enumerate/) contains everything related to
   justify the machine enumeration algorithm, and especially
   [Alg.lean](./Busybeaver/Enumerate/Alg.lean) contains a
   [TNF](https://wiki.bbchallenge.org/wiki/Tree_Normal_Form)
   enumeration algorithm along with formal proofs.
-- [Deciders](./Busybeaver/Deciders/) contains the code of deciders.
-  They are designed as proof-carrying functions. Currently we have:
-  [cyclers](./Busybeaver/Deciders/Cyclers.lean) and [translated
-  cyclers](./Busybeaver/Deciders/TranslatedCyclers.lean).
-
-# TODOs
-
-You can find the ongoing tasks and goals [here](https://todo.sr.ht/~vigoux/busybeaver).
+- [Deciders](./Busybeaver/Deciders/) contains the code of deciders,
+  designed as proof-carrying functions. These include cyclers, translated
+  cyclers, backwards reasoning, bounded exploration, NGram CPS (with
+  History/LRU variants), RepWL, FAR/WFAR, Loop1, and the generated BB5
+  table.
 
 # Acknowledgment
 
-I am heavily inspired by the following Coq formalisation of the problem: [busycoq](https://github.com/meithecatte/busycoq).
+Much of the BB5 formalisation builds on [Coq-BB5](https://github.com/ccz181078/Coq-BB5),
+the Coq proof that `BB(5) = 47,176,870`, from which the deciders, the hardcoded
+machine table, and the sporadic-machine arguments are ported.
 
-# Contibuting
+# Citation
 
-This project follows the `sr.ht` workflow, we recommend to [setup git to
-send emails](https://git-send-email.io). Note that it is not required
-to create a `sr.ht` account to contribute, simply clone the repo and
-make your changes.
+This work is described in the paper [*Determination of the fifth Busy Beaver
+value*](https://arxiv.org/abs/2509.12337) (arXiv:2509.12337):
 
-To setup for this specific repo, a `lake` script is provided:
-
+```bibtex
+@misc{busybeaver5,
+  title         = {Determination of the fifth Busy Beaver value},
+  author        = {{The bbchallenge Collaboration} and Blanchard, Justin and Briggs, Daniel and Deka, Konrad and Fenner, Nathan and Forster, Yannick and Georgiev, Georgi and House, Matthew L. and Hunter, Rachel and Iijil and K{\k{a}}dzio{\l}ka, Maja and Kropitz, Pavel and Ligocki, Shawn and mxdys and Na{\'s}ciszewski, Mateusz and savask and St{\'e}rin, Tristan and Xu, Chris and Yuen, Jason and Zimmermann, Th{\'e}o},
+  year          = {2025},
+  eprint        = {2509.12337},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.LO},
+  url           = {https://arxiv.org/abs/2509.12337}
+}
 ```
-lake script run gitconfig
-```
-
-After running this command, and assuming that you are working off the
-`master` branch, it should be sufficient to:
-
-1. `git send-email master`
-2. Annotate the patch set, the first annotation will be the cover
-   letter, that describes broadly your changes
-3. Wait for a review !
-
-If you need to make changes and resubmit a patch, you can do that
-using:
-```bash
-# Replace 2 by the version of the patchset
-git send-email -v2 master
-```
-
-For additional guidelines about how to contribute and send patches, we
-recommend reading [aerc's contributing guidelines](https://git.sr.ht/~rjarry/aerc/tree/master/item/CONTRIBUTING.md).

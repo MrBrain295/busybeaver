@@ -21,112 +21,6 @@ instance {M : Type _} [TM.Model M] {m : M} : ToString (TM.Model.HaltM m α) wher
   | .loops_prf _ => "loops"
   | .halts_prf n _ _ => s!"halts in {n + 1}"
 
-private lemma modelStepBase_to_tableStep
-    {l s : ℕ} {M : Machine l s}
-    {n : ℕ} {A B : TM.Model.Config (Machine l s)}
-    (h : TM.Model.StepBase M n A B) :
-    n = 1 ∧ (⟨A.state, A.tape⟩ : Config l s) -[M]-> (⟨B.state, B.tape⟩ : Config l s) := by
-  unfold TM.Model.StepBase at h
-  cases hget : M.get A.state A.tape.head with
-  | halt =>
-      simp [TM.Model.step, hget] at h
-  | next sym dir state =>
-      simp [TM.Model.step, hget] at h
-      rcases h with ⟨rfl, rfl⟩
-      constructor
-      · rfl
-      · simp [Machine.step, hget]
-
-private lemma modelLastState_to_tableLastState
-    {l s : ℕ} {M : Machine l s}
-    {C : TM.Model.Config (Machine l s)}
-    (h : TM.Model.LastState M C) :
-    M.LastState (⟨C.state, C.tape⟩ : Config l s) := by
-  cases hget : M.get C.state C.tape.head with
-  | halt =>
-      simp [Machine.LastState, Machine.step, hget]
-  | next sym dir state =>
-      simp [TM.Model.LastState, TM.Model.step, hget] at h
-
-private lemma tableLastState_to_modelLastState
-    {l s : ℕ} {M : Machine l s}
-    {C : Config l s}
-    (h : M.LastState C) :
-    TM.Model.LastState M ({ state := C.state, tape := C.tape } : TM.Model.Config (Machine l s)) := by
-  cases hget : M.get C.state C.tape.head with
-  | halt =>
-      simp [Machine.LastState, Machine.step, hget] at h
-      simp [TM.Model.LastState, TM.Model.step, hget]
-  | next sym dir state =>
-      simp [Machine.LastState, Machine.step, hget] at h
-
-private lemma tableStep_to_modelStep
-    {l s : ℕ} {M : Machine l s}
-    {A B : Config l s}
-    (h : A -[M]-> B) :
-    ({ state := A.state, tape := A.tape } : TM.Model.Config (Machine l s))
-      -[M]->'
-    ({ state := B.state, tape := B.tape } : TM.Model.Config (Machine l s)) := by
-  cases hget : M.get A.state A.tape.head with
-  | halt =>
-      simp [Machine.step, hget] at h
-  | next sym dir state =>
-      simp [Machine.step, hget] at h
-      rcases h with rfl
-      simp [TM.Model.Step, TM.Model.step, hget]
-
-private lemma tableMultistep_to_modelMultistep
-    {l s : ℕ} {M : Machine l s}
-    {n : ℕ} {A B : Config l s}
-    (h : A -[M]{n}-> B) :
-    ({ state := A.state, tape := A.tape } : TM.Model.Config (Machine l s))
-      -[M]{n}->'
-    ({ state := B.state, tape := B.tape } : TM.Model.Config (Machine l s)) := by
-  induction h with
-  | refl =>
-      exact .refl
-  | succ hAB hBC IH =>
-      exact .step (tableStep_to_modelStep hAB) IH
-
-private lemma tableHalts_to_modelHalts
-    {l s : ℕ} {M : Machine l s}
-    (h : M.halts (init : Config l s)) :
-    TM.Model.halts M (default : TM.Model.Config (Machine l s)) := by
-  rcases h with ⟨n, C, hLast, hReach⟩
-  exact ⟨n, ({ state := C.state, tape := C.tape } : TM.Model.Config (Machine l s)),
-    tableLastState_to_modelLastState hLast, by
-    exact tableMultistep_to_modelMultistep hReach⟩
-
-private lemma modelMultistepBase_to_tableMultistep
-    {l s : ℕ} {M : Machine l s}
-    {n : ℕ} {A B : TM.Model.Config (Machine l s)}
-    (h : A -[M]{n}->>' B) :
-    (⟨A.state, A.tape⟩ : Config l s) -[M]{n}-> (⟨B.state, B.tape⟩ : Config l s) := by
-  induction h with
-  | refl =>
-      exact .refl
-  | step hAB hBC IH =>
-      obtain ⟨hn, hAB'⟩ := modelStepBase_to_tableStep hAB
-      cases hn
-      simpa [Nat.add_comm, Nat.add_left_comm, Nat.add_assoc] using Machine.Multistep.succ hAB' IH
-
--- TODO: Move this proof and its dependencies to TM.Table.Model, it is about explaining how
---       a tabular machine is actually a model, and all its relevant API.
-private def modelHaltMToTableHaltM
-    {l s : ℕ} {M : Machine l s} :
-    TM.Model.HaltM M Unit → HaltM M Unit
-  | .unknown _ => .unknown ()
-  | .halts_prf n C h =>
-      .halts_prf n ⟨C.state, C.tape⟩ <| by
-        rcases h with ⟨hLast, hReach⟩
-        constructor
-        · exact modelLastState_to_tableLastState hLast
-        · exact modelMultistepBase_to_tableMultistep hReach
-  | .loops_prf h =>
-      .loops_prf (by
-        intro hhalts
-        exact h (tableHalts_to_modelHalts hhalts))
-
 def compute (l s: ℕ) (dec: (M: Machine l s) → HaltM M Unit): Busybeaver.BBResult l s :=
   let res0 := Busybeaver.BBCompute dec (Busybeaver.BBCompute.m0RB l s)
   let res1 := Busybeaver.BBCompute dec (Busybeaver.BBCompute.m1RB l s)
@@ -153,6 +47,7 @@ inductive DeciderConfig where
 | repWL : RepWLConfig → DeciderConfig
 | bb5TableExecutable : DeciderConfig
 | bb5TableAll : DeciderConfig
+| bb5TableNF : DeciderConfig
 deriving FromJson, ToJson
 
 instance: ToString DeciderConfig where
@@ -171,6 +66,7 @@ instance: ToString DeciderConfig where
       s!"RepWL len={cfg.len} threshold={cfg.threshold} maxT={cfg.maxT} bound={cfg.bound}"
   | .bb5TableExecutable => "BB5 executable hardcoded table"
   | .bb5TableAll => "BB5 full hardcoded table"
+  | .bb5TableNF => "BB5 normal-form hardcoded table"
 
 def DeciderConfig.deciderModel {M : Type _} [TM.Model M] (cfg: DeciderConfig) (m : M) :
     TM.Model.HaltM m Unit := match cfg with
@@ -186,6 +82,11 @@ def runBB5Table (table : Deciders.BB5Table.Table) (M : Machine l s) : HaltM M Un
   | 4, 1 => Deciders.BB5Table.tableDecider table M
   | _, _ => .unknown ()
 
+def runBB5TableNF (table : Deciders.BB5Table.Table) (M : Machine l s) : HaltM M Unit :=
+  match l, s with
+  | 4, 1 => Deciders.BB5Table.nfTableDecider table M
+  | _, _ => .unknown ()
+
 def DeciderConfig.deciderTable (cfg: DeciderConfig) (M: Machine l s) : HaltM M Unit := match cfg with
 | .backwardsReasoning n => backwardsReasoningDecider n M
 | .nGramCPS cfg => nGramCPSDecider cfg M
@@ -195,7 +96,8 @@ def DeciderConfig.deciderTable (cfg: DeciderConfig) (M: Machine l s) : HaltM M U
 | .loop1 n => Deciders.Loop1.decider n M
 | .bb5TableExecutable => runBB5Table Deciders.BB5Table.Generated.executableTable M
 | .bb5TableAll => runBB5Table Deciders.BB5Table.Generated.allTable M
-| _ => modelHaltMToTableHaltM (cfg.deciderModel M)
+| .bb5TableNF => runBB5TableNF Deciders.BB5Table.Generated.executableTable M
+| _ => TM.Table.Model.modelHaltMToTableHaltM (cfg.deciderModel M)
 
 @[inline]
 def toDecider (cfg: List DeciderConfig) (M: Machine l s): TM.Model.HaltM M Unit := do
@@ -221,6 +123,17 @@ def firstDecision?: List DeciderConfig → (M: Machine l s) → Option (String �
       some (toString d, toString res)
     else
       firstDecision? ds M
+
+/-- Like `firstDecision?`, but returns the deciding `DeciderConfig` together with the full
+`HaltM` result (needed to read the halting config for tree expansion in `export`). -/
+def firstDecisionFull?: List DeciderConfig → (M: Machine l s) → Option (DeciderConfig × HaltM M Unit)
+| [], _ => none
+| d :: ds, M =>
+    let res := d.deciderTable M
+    if HaltM.decided res then
+      some (d, res)
+    else
+      firstDecisionFull? ds M
 
 /-- Like `firstDecision?` but keeps the proof-carrying `HaltM` alongside the name
 of the decider that settled it (or `.unknown`/`none` if none did). Used to emit
@@ -322,6 +235,11 @@ def bb5DefaultConfig: List DeciderConfig := [
   .explore 4100,
   .loop1 4100,
   .bb5TableExecutable,
+  -- Normal-form table lookup (Coq's `NF_decider table_based_decider`): canonicalise
+  -- with `TM_to_NF` then look up the table.  Cheap, and the only path for FAR / WFAR /
+  -- sporadic machines reached in a non-canonical orbit representative — the heavy
+  -- NGram passes below cannot decide those, so run this before them.
+  .bb5TableNF,
   .repWL { len := 2, threshold := 3, maxT := 320, bound := 400 },
   .nGramCPSLRU { left := 2, right := 2, bound := 1000 },
   .nGramCPSHistory { history := 2, left := 2, right := 2, bound := 3000 },
@@ -334,7 +252,15 @@ def bb5DefaultConfig: List DeciderConfig := [
   .nGramCPSLRU { left := 3, right := 3, bound := 20000 },
   .repWL { len := 4, threshold := 2, maxT := 320, bound := 2000 },
   .repWL { len := 6, threshold := 2, maxT := 320, bound := 2000 },
-  .nGramCPS { n := 4, bound := 20000 }
+  .nGramCPS { n := 4, bound := 20000 },
+  -- Our NGramCPS abstraction is coarser than Coq's at equal window sizes, so the
+  -- table's hardcoded params (and Coq's generic passes) underdecide for us.  These
+  -- larger-window passes recover the machines that need them.
+  .nGramCPS { n := 6, bound := 300000 },
+  .nGramCPS { n := 8, bound := 300000 },
+  .nGramCPSHistory { history := 2, left := 6, right := 6, bound := 300000 },
+  .nGramCPSHistory { history := 4, left := 6, right := 6, bound := 300000 },
+  .nGramCPSHistory { history := 8, left := 8, right := 8, bound := 500000 }
 ]
 
 def defaultConfigFor (l s : ℕ) : List DeciderConfig :=
@@ -471,6 +397,62 @@ unsafe def exploreCmd := `[Cli|
     output: String; "Path to write the output"
 ]
 
+/-- Walk the TNF enumeration tree, emitting one tab-separated line per enumerated machine:
+
+    `<code>\t<verdict>\t<steps>\t<deciderJson>`
+
+where `verdict ∈ {halt, nonhalt, undecided}`, `steps` is the halting step count (`n+1`) for
+halting machines and empty otherwise, and `deciderJson` is the compact JSON of the deciding
+`DeciderConfig` (empty for holdouts). This is the source feed for the explorer database; the
+DFS emission order is a stable enumeration ordinal. -/
+unsafe def exportRec (cfg: List DeciderConfig) (M: Machine l s)
+    (emit: String → IO Unit): IO Unit := do
+  let code := s!"{repr M}"
+  match firstDecisionFull? cfg M with
+  | none => emit s!"{code}\tundecided\t\t"
+  | some (d, res) =>
+      let dj := (Lean.toJson d).compress
+      match res with
+      | .unknown _ => emit s!"{code}\tundecided\t\t"
+      -- `.loops_prf` carries a `¬ halts` proof from any decider, not necessarily a periodicity
+      -- proof, so the verdict is the honest "nonhalt" rather than "loop".
+      | .loops_prf _ => emit s!"{code}\tnonhalt\t\t{dj}"
+      | .halts_prf n C _ =>
+          emit s!"{code}\thalt\t{n + 1}\t{dj}"
+          -- Expand the halting transition only when other cells remain to be filled.
+          if M.n_halting_trans > 1 then
+            for M' in Quot.unquot (Busybeaver.next_machines M C.state C.tape.head).val do
+              exportRec cfg M' emit
+
+unsafe def runExportCmd (p: Parsed): IO UInt32 := do
+  let l := (p.positionalArg! "nlabs" |>.as! ℕ) - 1
+  let s := (p.positionalArg! "nsyms" |>.as! ℕ) - 1
+  let output := p.positionalArg! "output" |>.as! String
+  let cfg ← determineConfig l s ((p.flag? "config").map (Parsed.Flag.as! · String))
+
+  IO.FS.withFile output IO.FS.Mode.write fun h => do
+    let emit (line: String): IO Unit := h.putStrLn line
+    if l = 0 then
+      -- Single-state machines are trivial; emit the lone seed result.
+      exportRec cfg (Busybeaver.BBCompute.m1RB l s) emit
+    else
+      exportRec cfg (Busybeaver.BBCompute.m0RB l s) emit
+      exportRec cfg (Busybeaver.BBCompute.m1RB l s) emit
+  return 0
+
+unsafe def exportCmd := `[Cli|
+  enumerate VIA runExportCmd;
+  "Streams every TNF-enumerated machine with its verdict and deciding decider to a file."
+
+  FLAGS:
+    c, config: String; "Configuration of the deciders to run"
+
+  ARGS:
+    nlabs: ℕ; "Number of labels (states) for the machines"
+    nsyms: ℕ; "Number of symbols for the machines"
+    output: String; "Path to write the enumeration stream"
+]
+
 unsafe def computeCmd (p: Parsed): IO UInt32 := do
   let start ← IO.monoMsNow
   let l := (p.positionalArg! "nlabs" |>.as! ℕ) - 1
@@ -573,7 +555,8 @@ unsafe def mainCmd := `[Cli|
   SUBCOMMANDS:
     decideCmd;
     auditCmd;
-    exploreCmd
+    exploreCmd;
+    exportCmd
 ]
 
 unsafe def main (args: List String): IO UInt32 := do
