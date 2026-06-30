@@ -18,6 +18,24 @@ import Busybeaver.Deciders.Skelet.ShiftOverflow
 import Busybeaver.Deciders.Skelet.ShiftOverflowBins
 import Busybeaver.Deciders.Skelet.TapeCalc
 
+/-- `evsteps t₁, …, tₙ` applies `n` consecutive single machine steps via
+`Machine.EvStep.step` and closes the chain with `Machine.EvStep.refl`. -/
+local syntax "evsteps " term,+ : tactic
+local macro_rules
+  | `(tactic| evsteps $t:term) =>
+      `(tactic| exact TM.Table.Machine.EvStep.step $t TM.Table.Machine.EvStep.refl)
+  | `(tactic| evsteps $t:term, $ts:term,*) =>
+      `(tactic| refine TM.Table.Machine.EvStep.step $t ?_ <;> evsteps $ts,*)
+
+/-- `evchain t₁, …, tₙ` applies `n` consecutive single machine steps via
+`Machine.EvStep.step`, leaving the remaining goal open for further tactics. -/
+local syntax "evchain " term,+ : tactic
+local macro_rules
+  | `(tactic| evchain $t:term) =>
+      `(tactic| refine TM.Table.Machine.EvStep.step $t ?_)
+  | `(tactic| evchain $t:term, $ts:term,*) =>
+      `(tactic| refine TM.Table.Machine.EvStep.step $t ?_ <;> evchain $ts,*)
+
 /-!
 Executable support for the BB(5) table-based layer.
 
@@ -69,24 +87,6 @@ lemma gB0d : M.get 1 default = .next 1 .right 2 := by decide
 lemma gC0d : M.get 2 default = .next 1 .left 0 := by decide
 lemma gD0d : M.get 3 default = .next 1 .left 4 := by decide
 lemma gE0d : M.get 4 default = .next 1 .left 2 := by decide
-
-/-- `evsteps t₁, …, tₙ` applies `n` consecutive single machine steps via
-`Machine.EvStep.step` and closes the chain with `Machine.EvStep.refl`. -/
-local syntax "evsteps " term,+ : tactic
-local macro_rules
-  | `(tactic| evsteps $t:term) =>
-      `(tactic| exact Machine.EvStep.step $t Machine.EvStep.refl)
-  | `(tactic| evsteps $t:term, $ts:term,*) =>
-      `(tactic| refine Machine.EvStep.step $t ?_ <;> evsteps $ts,*)
-
-/-- `evchain t₁, …, tₙ` applies `n` consecutive single machine steps via
-`Machine.EvStep.step`, leaving the remaining goal open for further tactics. -/
-local syntax "evchain " term,+ : tactic
-local macro_rules
-  | `(tactic| evchain $t:term) =>
-      `(tactic| refine Machine.EvStep.step $t ?_)
-  | `(tactic| evchain $t:term, $ts:term,*) =>
-      `(tactic| refine Machine.EvStep.step $t ?_ <;> evchain $ts,*)
 
 /-- Rightward directed configuration (Coq `l {{q}}> r`): head reads the top of
 `R`, left side is `L`. -/
@@ -1895,12 +1895,12 @@ lemma incr_right : ∀ (n : Dorf) (l : ListBlank (Symbol 1)),
       have sC := step_left_head gC1 l (∅ : ListBlank (Symbol 1))
       simp only [cons_zero_empty] at sB
       simp only [Zs, zI, cons_zero_empty]
-      exact Machine.EvStep.step sB (Machine.EvStep.step sC Machine.EvStep.refl)
+      evsteps sB, sC
   | zO n, l => by
       have sB := step_left_mk' (l₀ := 𝟙) gB0 l (Zs n)
       have sC := step_left_head gC1 l (ListBlank.cons 𝟘 (Zs n))
       simp only [Zs, zI]
-      exact Machine.EvStep.step sB (Machine.EvStep.step sC Machine.EvStep.refl)
+      evsteps sB, sC
   | zIO n, l => by
       have sB := step_right_mk' gB1 (ListBlank.cons 𝟙 l) (ListBlank.cons 𝟘 (Zs n))
       have sA := step_right_mk' gA0 (ListBlank.cons 𝟙 (ListBlank.cons 𝟙 l)) (Zs n)
@@ -1909,8 +1909,9 @@ lemma incr_right : ∀ (n : Dorf) (l : ListBlank (Symbol 1)),
       have sD2 := step_left_head gD1 l (ListBlank.cons 𝟘 (Zs (zI n)))
       simp only [headL_cons] at ih
       simp only [Zs, zI]
-      exact Machine.EvStep.step sB (Machine.EvStep.step sA
-        (ih.trans (Machine.EvStep.step sD1 (Machine.EvStep.step sD2 Machine.EvStep.refl))))
+      evchain sB, sA
+      refine ih.trans ?_
+      evsteps sD1, sD2
 
 /-- Left-counter increment sweep (Coq `incr_left`): the head, entering the left
 accumulator in state `D`, applies the Zeckendorf carry `zI` to it and returns to
@@ -1920,29 +1921,19 @@ lemma incr_left : ∀ (n : Dorf) (r : ListBlank (Symbol 1)),
       -[M]->* (⟨0, Tape.mk' (Ts (zI n)) r⟩ : Config 4 1)
   | zend, r => by
       simp only [Ts, zI, headL_empty]
-      refine Machine.EvStep.step (step_left_edge gD0 _) ?_
-      refine Machine.EvStep.step (step_right_mk' gC0 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gE1 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-      exact Machine.EvStep.step (step_right_mk' gA1 _ _) Machine.EvStep.refl
+      evsteps step_left_edge gD0 _, step_right_mk' gC0 _ _, step_right_mk' gE1 _ _,
+        step_right_mk' gB1 _ _, step_right_mk' gA1 _ _
   | zO n, r => by
       simp only [Ts, zI, headL_cons]
-      refine Machine.EvStep.step (step_left_mk' (l₀ := 𝟘) gD0 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gC0 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gE1 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-      exact Machine.EvStep.step (step_right_mk' gA1 _ _) Machine.EvStep.refl
+      evsteps step_left_mk' (l₀ := 𝟘) gD0 _ _, step_right_mk' gC0 _ _, step_right_mk' gE1 _ _,
+        step_right_mk' gB1 _ _, step_right_mk' gA1 _ _
   | zIO n, r => by
       simp only [Ts, zI, headL_cons]
-      refine Machine.EvStep.step (step_left_mk' (l₀ := 𝟙) gD0 _ _) ?_
-      refine Machine.EvStep.step (step_left_mk' (l₀ := 𝟘) gC1 _ _) ?_
-      refine Machine.EvStep.step (step_left_mk' (l₀ := 𝟙) gD0 _ _) ?_
-      refine Machine.EvStep.step (step_left_head gC1 _ _) ?_
+      evchain step_left_mk' (l₀ := 𝟙) gD0 _ _, step_left_mk' (l₀ := 𝟘) gC1 _ _,
+        step_left_mk' (l₀ := 𝟙) gD0 _ _, step_left_head gC1 _ _
       refine (incr_left n _).trans ?_
-      refine Machine.EvStep.step (step_right_mk' gA1 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gA1 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gA1 _ _) ?_
-      exact Machine.EvStep.step (step_right_mk' gA1 _ _) Machine.EvStep.refl
+      evsteps step_right_mk' gA1 _ _, step_right_mk' gA1 _ _, step_right_mk' gA1 _ _,
+        step_right_mk' gA1 _ _
 
 /-- One macro-step: the counter increments (Coq `incr_D`). -/
 lemma incr_D (n : Dorf) : Dcfg n -[M]->+ Dcfg (incr n) := by
@@ -1951,13 +1942,9 @@ lemma incr_D (n : Dorf) : Dcfg n -[M]->+ Dcfg (incr n) := by
       simp only [Dcfg, incr, zI, Ls, Zs, Ts, headL_empty, headL_cons, cons_zero_empty]
       refine Trans.trans (Machine.Progress.single (step_left_edge gD0 _))
         (?_ : _ -[M]->* _)
-      refine Machine.EvStep.step (step_right_mk' gC0 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gE1 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-      refine Machine.EvStep.step (step_right_blank gA0d _) ?_
-      refine Machine.EvStep.step (step_left_blank (l₀ := 𝟙) gB0d _) ?_
-      refine Machine.EvStep.step (step_left_mk' gC1 _ _) ?_
-      refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
+      evchain step_right_mk' gC0 _ _, step_right_mk' gE1 _ _, step_right_mk' gB1 _ _,
+        step_right_blank gA0d _, step_left_blank (l₀ := 𝟙) gB0d _, step_left_mk' gC1 _ _,
+        step_left_mk' gD1 _ _
       simp only [cons_zero_empty]
       exact Machine.EvStep.refl
   | zO n =>
@@ -1966,48 +1953,35 @@ lemma incr_D (n : Dorf) : Dcfg n -[M]->+ Dcfg (incr n) := by
           simp only [Dcfg, incr, zI, Ls, Zs, Ts, headL_empty, headL_cons, cons_zero_empty]
           refine Trans.trans (Machine.Progress.single (step_left_edge gD0 _))
             (?_ : _ -[M]->* _)
-          refine Machine.EvStep.step (step_right_mk' gC0 _ _) ?_
-          refine Machine.EvStep.step (step_right_mk' gE1 _ _) ?_
-          refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-          refine Machine.EvStep.step (step_right_blank gA0d _) ?_
-          refine Machine.EvStep.step (step_left_blank (l₀ := 𝟙) gB0d _) ?_
-          refine Machine.EvStep.step (step_left_mk' gC1 _ _) ?_
-          refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
+          evchain step_right_mk' gC0 _ _, step_right_mk' gE1 _ _, step_right_mk' gB1 _ _,
+            step_right_blank gA0d _, step_left_blank (l₀ := 𝟙) gB0d _, step_left_mk' gC1 _ _,
+            step_left_mk' gD1 _ _
           simp only [cons_zero_empty]
           exact Machine.EvStep.refl
       | zO n =>
           simp only [Dcfg, incr, zI, Ls, Zs, Ts, headL_cons]
           refine Trans.trans (Machine.Progress.single (step_left_mk' gD0 _ _))
             (?_ : _ -[M]->* _)
-          refine Machine.EvStep.step (step_right_mk' gC0 _ _) ?_
-          refine Machine.EvStep.step (step_right_mk' gE1 _ _) ?_
-          refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-          refine Machine.EvStep.step (step_right_mk' gA0 _ _) ?_
+          evchain step_right_mk' gC0 _ _, step_right_mk' gE1 _ _, step_right_mk' gB1 _ _,
+            step_right_mk' gA0 _ _
           refine (incr_right n _).trans ?_
           simp only [headL_cons]
-          refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-          exact Machine.EvStep.refl
+          evsteps step_left_mk' gD1 _ _
       | zIO n =>
           simp only [Dcfg, incr, zI, Ls, Zs, Ts, headL_cons]
           refine Trans.trans (Machine.Progress.single (step_left_mk' gD0 _ _))
             (?_ : _ -[M]->* _)
-          refine Machine.EvStep.step (step_left_mk' gC1 _ _) ?_
-          refine Machine.EvStep.step (step_left_mk' gD0 _ _) ?_
-          refine Machine.EvStep.step (step_left_head gC1 _ _) ?_
+          evchain step_left_mk' gC1 _ _, step_left_mk' gD0 _ _, step_left_head gC1 _ _
           refine (incr_left n _).trans ?_
-          refine Machine.EvStep.step (step_right_mk' gA1 _ _) ?_
-          refine Machine.EvStep.step (step_right_mk' gA1 _ _) ?_
-          refine Machine.EvStep.step (step_right_mk' gA0 _ _) ?_
-          refine Machine.EvStep.step (step_left_mk' gB0 _ _) ?_
-          refine Machine.EvStep.step (step_left_mk' gC1 _ _) ?_
-          exact Machine.EvStep.refl
+          evsteps step_right_mk' gA1 _ _, step_right_mk' gA1 _ _, step_right_mk' gA0 _ _,
+            step_left_mk' gB0 _ _, step_left_mk' gC1 _ _
   | zIO n =>
       simp only [Dcfg, incr, Ls, Zs, headL_cons]
       refine Trans.trans (Machine.Progress.single (step_left_mk' gD0 _ _))
         (?_ : _ -[M]->* _)
-      refine Machine.EvStep.step (step_left_head gC1 _ _) ?_
+      evchain step_left_head gC1 _ _
       refine (incr_left n _).trans ?_
-      refine Machine.EvStep.step (step_right_mk' gA0 _ _) ?_
+      evchain step_right_mk' gA0 _ _
       exact incr_right (zI n) _
 
 /-- `init` reaches `Dcfg zend` in three steps. -/
@@ -2020,8 +1994,7 @@ lemma enters : init -[M]->* Dcfg zend := by
       (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 ∅))⟩ : Config 4 1) := by
     simp only [Dcfg, incr, Zs, Ls, headL_empty, cons_zero_empty]
   rw [hd0]
-  exact Machine.EvStep.step s0 (Machine.EvStep.step s1
-    (Machine.EvStep.step s2 Machine.EvStep.refl))
+  evsteps s0, s1, s2
 
 /-- `SM6` does not halt: the Zeckendorf family `{Dcfg n}` is closed and reachable. -/
 theorem nonHalting : ¬ M.halts init := by
