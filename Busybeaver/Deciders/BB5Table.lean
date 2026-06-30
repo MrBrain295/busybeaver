@@ -70,6 +70,24 @@ lemma gC0d : M.get 2 default = .next 1 .left 0 := by decide
 lemma gD0d : M.get 3 default = .next 1 .left 4 := by decide
 lemma gE0d : M.get 4 default = .next 1 .left 2 := by decide
 
+/-- `evsteps t₁, …, tₙ` applies `n` consecutive single machine steps via
+`Machine.EvStep.step` and closes the chain with `Machine.EvStep.refl`. -/
+local syntax "evsteps " term,+ : tactic
+local macro_rules
+  | `(tactic| evsteps $t:term) =>
+      `(tactic| exact Machine.EvStep.step $t Machine.EvStep.refl)
+  | `(tactic| evsteps $t:term, $ts:term,*) =>
+      `(tactic| refine Machine.EvStep.step $t ?_ <;> evsteps $ts,*)
+
+/-- `evchain t₁, …, tₙ` applies `n` consecutive single machine steps via
+`Machine.EvStep.step`, leaving the remaining goal open for further tactics. -/
+local syntax "evchain " term,+ : tactic
+local macro_rules
+  | `(tactic| evchain $t:term) =>
+      `(tactic| refine Machine.EvStep.step $t ?_)
+  | `(tactic| evchain $t:term, $ts:term,*) =>
+      `(tactic| refine Machine.EvStep.step $t ?_ <;> evchain $ts,*)
+
 /-- Rightward directed configuration (Coq `l {{q}}> r`): head reads the top of
 `R`, left side is `L`. -/
 def headR (q : Label 4) (L R : ListBlank (Symbol 1)) : Config 4 1 := ⟨q, Tape.mk' L R⟩
@@ -85,13 +103,7 @@ lemma L_inc_zero (r : ListBlank (Symbol 1)) :
     headL 3 (L 0) r -[M]->* headR 1 (L' .one) r := by
   rw [show (L 0) = (∅ : ListBlank (Symbol 1)) from rfl, TM.Table.headL_empty]
   simp only [L', headR]
-  refine Machine.EvStep.step (step_left_edge gD0 r) ?_
-  refine Machine.EvStep.step (step_left_edge gE0 _) ?_
-  refine Machine.EvStep.step (step_left_edge gC0 _) ?_
-  refine Machine.EvStep.step (step_right_mk' gA0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-  exact Machine.EvStep.step (step_right_mk' gB1 _ _) Machine.EvStep.refl
+  evsteps step_left_edge gD0 r, step_left_edge gE0 _, step_left_edge gC0 _, step_right_mk' gA0 _ _, step_right_mk' gB1 _ _, step_right_mk' gB1 _ _, step_right_mk' gB1 _ _
 
 /-
 Left counter increment sweep on a positive counter (Coq `L_inc`, positive part).
@@ -109,40 +121,23 @@ lemma L'_inc (p : PosNum) (r : ListBlank (Symbol 1)) :
   induction p using PosNum.recOn generalizing r with
   | one =>
       simp only [L', headR, headL_cons, PosNum.succ]
-      refine Machine.EvStep.step (step_left_mk' gD0 _ _) ?_
-      refine Machine.EvStep.step (step_left_mk' gE0 _ _) ?_
-      refine Machine.EvStep.step (step_left_mk' gC0 _ _) ?_
-      refine Machine.EvStep.step (step_left_edge gA1 _) ?_
+      evchain step_left_mk' gD0 _ _, step_left_mk' gE0 _ _, step_left_mk' gC0 _ _, step_left_edge gA1 _
       refine Machine.EvStep.trans (L_inc_zero _) ?_
       simp only [L', headR]
-      refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-      exact Machine.EvStep.step (step_right_mk' gB1 _ _) Machine.EvStep.refl
+      evsteps step_right_mk' gB1 _ _, step_right_mk' gB1 _ _, step_right_mk' gB1 _ _, step_right_mk' gB1 _ _
   | bit1 k ih =>
       simp only [L', headR, headL_cons, PosNum.succ]
-      refine Machine.EvStep.step (step_left_mk' gD0 _ _) ?_
-      refine Machine.EvStep.step (step_left_mk' gE0 _ _) ?_
-      refine Machine.EvStep.step (step_left_mk' gC0 _ _) ?_
+      evchain step_left_mk' gD0 _ _, step_left_mk' gE0 _ _, step_left_mk' gC0 _ _
       rw [L'_as_K']
-      refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
+      evchain step_left_mk' gA1 _ _
       have key := ih (ListBlank.cons 1 (ListBlank.cons 1 (ListBlank.cons 1 (ListBlank.cons 1 r))))
       rw [headL_L'] at key
       refine Machine.EvStep.trans key ?_
       simp only [headR]
-      refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-      exact Machine.EvStep.step (step_right_mk' gB1 _ _) Machine.EvStep.refl
+      evsteps step_right_mk' gB1 _ _, step_right_mk' gB1 _ _, step_right_mk' gB1 _ _, step_right_mk' gB1 _ _
   | bit0 k ih =>
       simp only [L', headR, headL_cons, PosNum.succ]
-      refine Machine.EvStep.step (step_left_mk' gD0 _ _) ?_
-      refine Machine.EvStep.step (step_left_mk' gE0 _ _) ?_
-      refine Machine.EvStep.step (step_left_mk' gC0 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gA0 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-      exact Machine.EvStep.step (step_right_mk' gB1 _ _) Machine.EvStep.refl
+      evsteps step_left_mk' gD0 _ _, step_left_mk' gE0 _ _, step_left_mk' gC0 _ _, step_right_mk' gA0 _ _, step_right_mk' gB1 _ _, step_right_mk' gB1 _ _, step_right_mk' gB1 _ _
 
 /-- Left counter increment sweep (Coq `L_inc`). -/
 lemma L_inc (n : Num) (r : ListBlank (Symbol 1)) :
@@ -160,18 +155,14 @@ lemma R_inc_has0 {n : PosNum} (h : Has0 n) (l : ListBlank (Symbol 1)) :
   | bit0 n =>
       show headR 2 l (ListBlank.cons 𝟙 (ListBlank.cons 𝟘 (R n)))
         -[M]->* headL 3 l (R (PosNum.succ (.bit0 n)))
-      refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-      refine Machine.EvStep.step (step_left_mk' gC0 _ _) ?_
-      exact Machine.EvStep.step (step_left_head gA1 _ _) Machine.EvStep.refl
+      evsteps step_right_mk' gC1 _ _, step_left_mk' gC0 _ _, step_left_head gA1 _ _
   | @bit1 n h ih =>
       show headR 2 l (ListBlank.cons 𝟙 (ListBlank.cons 𝟙 (R n)))
         -[M]->* headL 3 l (R (PosNum.succ (.bit1 n)))
-      refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
+      evchain step_right_mk' gC1 _ _, step_right_mk' gC1 _ _
       refine (ih (ListBlank.cons 𝟙 (ListBlank.cons 𝟙 l))).trans ?_
       rw [headL_cons]
-      refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-      exact Machine.EvStep.step (step_left_head gA1 _ _) Machine.EvStep.refl
+      evsteps step_left_mk' gD1 _ _, step_left_head gA1 _ _
 
 /-- Right counter increment with overflow (Coq `R_inc_all1`).  Induction on `h`. -/
 lemma R_inc_all1 {n : PosNum} (h : All1 n) (l : ListBlank (Symbol 1)) :
@@ -180,65 +171,34 @@ lemma R_inc_all1 {n : PosNum} (h : All1 n) (l : ListBlank (Symbol 1)) :
   | one =>
       show headR 2 (ListBlank.cons 𝟙 l) (ListBlank.cons 𝟙 (ListBlank.cons 𝟙 ∅))
         -[M]->* headL 3 l (R (PosNum.succ .one))
-      refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-      refine Machine.EvStep.step (step_left_blank gC0 _) ?_
-      refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
-      refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-      exact Machine.EvStep.step (step_left_head gA1 _ _) Machine.EvStep.refl
+      evsteps step_right_mk' gC1 _ _, step_right_mk' gC1 _ _, step_left_blank gC0 _, step_left_mk' gA1 _ _, step_left_mk' gD1 _ _, step_left_head gA1 _ _
   | @bit1 n h ih =>
       show headR 2 (ListBlank.cons 𝟙 l) (ListBlank.cons 𝟙 (ListBlank.cons 𝟙 (R n)))
         -[M]->* headL 3 l (R (PosNum.succ (.bit1 n)))
-      refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
+      evchain step_right_mk' gC1 _ _, step_right_mk' gC1 _ _
       refine (ih (ListBlank.cons 𝟙 (ListBlank.cons 𝟙 l))).trans ?_
       rw [headL_cons]
-      refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-      exact Machine.EvStep.step (step_left_head gA1 _ _) Machine.EvStep.refl
+      evsteps step_left_mk' gD1 _ _, step_left_head gA1 _ _
 
 /-- `D_inc` for `a = 0`. -/
 lemma D_inc_zero {n : Num} {m : PosNum} (h : Has0 m) :
     D n 0 m -[M]->* D (Num.succ n) 0 m.succ := by
   unfold D
   refine (L_inc n _).trans ?_
-  refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gB0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gC0 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gA0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gB0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
+  evchain step_right_mk' gB1 _ _, step_right_mk' gB0 _ _, step_right_mk' gC1 _ _, step_left_mk' gC0 _ _, step_left_mk' gA1 _ _, step_left_mk' gD1 _ _, step_right_mk' gA0 _ _, step_right_mk' gB0 _ _, step_right_mk' gC1 _ _, step_right_mk' gC1 _ _
   refine (R_inc_has0 h _).trans ?_
   rw [headL_cons]
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  exact Machine.EvStep.step (step_left_head gA1 _ _) Machine.EvStep.refl
+  evsteps step_left_mk' gD1 _ _, step_left_mk' gA1 _ _, step_left_mk' gD1 _ _, step_left_head gA1 _ _
 
 /-- `D_inc` for `a = 1`. -/
 lemma D_inc_one {n : Num} {m : PosNum} (h : Has0 m) :
     D n 1 m -[M]->* D (Num.succ n) 1 m.succ := by
   unfold D
   refine (L_inc n _).trans ?_
-  refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gB0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
+  evchain step_right_mk' gB1 _ _, step_right_mk' gB0 _ _, step_right_mk' gC1 _ _, step_right_mk' gC1 _ _
   refine (R_inc_has0 h _).trans ?_
   rw [headL_cons]
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gA0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gB0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gC0 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  exact Machine.EvStep.step (step_left_head gA1 _ _) Machine.EvStep.refl
+  evsteps step_left_mk' gD1 _ _, step_left_mk' gA1 _ _, step_left_mk' gD1 _ _, step_right_mk' gA0 _ _, step_right_mk' gB0 _ _, step_right_mk' gC1 _ _, step_left_mk' gC0 _ _, step_left_mk' gA1 _ _, step_left_mk' gD1 _ _, step_left_head gA1 _ _
 
 /-- One counter increment (Coq `D_inc`). -/
 lemma D_inc {n : Num} {a : Symbol 1} {m : PosNum} (h : Has0 m) :
@@ -319,46 +279,27 @@ lemma eat_LI (l : side) (t : PosNum) :
     headL 3 (ListBlank.cons 𝟘 (ListBlank.cons 𝟘 (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 l)))) (R t)
       -[M]->* headL 3 l (R t.bit1.bit1) := by
   rw [headL_cons]
-  refine Machine.EvStep.step (step_left_mk' gD0 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gE0 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gC0 _ _) ?_
-  exact Machine.EvStep.step (step_left_head gA1 _ _) Machine.EvStep.refl
+  evsteps step_left_mk' gD0 _ _, step_left_mk' gE0 _ _, step_left_mk' gC0 _ _, step_left_head gA1 _ _
 
 /-- Coq `eat_KI`. -/
 lemma eat_KI {t : PosNum} (h : Has0 t) (l : side) :
     headL 3 (ListBlank.cons 𝟘 (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 (ListBlank.cons 𝟘 l)))) (R t)
       -[M]->* headL 3 l (R t.succ.bit1.bit0) := by
   rw [headL_cons]
-  refine Machine.EvStep.step (step_left_mk' gD0 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gE0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
+  evchain step_left_mk' gD0 _ _, step_left_mk' gE0 _ _, step_right_mk' gC1 _ _, step_right_mk' gC1 _ _, step_right_mk' gC1 _ _
   refine (R_inc_has0 h _).trans ?_
   rw [headL_cons]
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gA0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gB0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gC0 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  exact Machine.EvStep.step (step_left_head gA1 _ _) Machine.EvStep.refl
+  evsteps step_left_mk' gD1 _ _, step_left_mk' gA1 _ _, step_left_mk' gD1 _ _, step_right_mk' gA0 _ _, step_right_mk' gB0 _ _, step_right_mk' gC1 _ _, step_left_mk' gC0 _ _, step_left_mk' gA1 _ _, step_left_mk' gD1 _ _, step_left_head gA1 _ _
 
 /-- Coq `eat_JI`. -/
 lemma eat_JI {t : PosNum} (h : Has0 t) (l : side) :
     headL 3 (ListBlank.cons 𝟙 (ListBlank.cons 𝟘 l)) (R t)
       -[M]->* headL 3 l (R t.succ.bit0) := by
   rw [headL_cons]
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gA0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gB0 _ _) ?_
+  evchain step_left_mk' gD1 _ _, step_right_mk' gA0 _ _, step_right_mk' gB0 _ _
   refine (R_inc_has0 h _).trans ?_
   rw [headL_cons]
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  exact Machine.EvStep.step (step_left_head gA1 _ _) Machine.EvStep.refl
+  evsteps step_left_mk' gD1 _ _, step_left_head gA1 _ _
 
 open Deciders.Skelet.FixedBin in
 /-- Increment of a fixed-width `Lk` block (Coq `Lk_inc`).  Induction on the `Succ` proof. -/
@@ -368,25 +309,13 @@ lemma Lk_inc {k : ℕ} {n n' : Bin k} (hn : Succ n n') (l : side) (r : side) :
   | b0 n =>
       simp only [Lk, ListBlank.append_cons]
       rw [headL_cons]
-      refine Machine.EvStep.step (step_left_mk' gD0 _ _) ?_
-      refine Machine.EvStep.step (step_left_mk' gE0 _ _) ?_
-      refine Machine.EvStep.step (step_left_mk' gC0 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gA0 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-      exact Machine.EvStep.step (step_right_mk' gB1 _ _) Machine.EvStep.refl
+      evsteps step_left_mk' gD0 _ _, step_left_mk' gE0 _ _, step_left_mk' gC0 _ _, step_right_mk' gA0 _ _, step_right_mk' gB1 _ _, step_right_mk' gB1 _ _, step_right_mk' gB1 _ _
   | @b1 k' np ns hp ih =>
       simp only [Lk, ListBlank.append_cons]
       rw [headL_cons]
-      refine Machine.EvStep.step (step_left_mk' gD0 _ _) ?_
-      refine Machine.EvStep.step (step_left_mk' gE0 _ _) ?_
-      refine Machine.EvStep.step (step_left_mk' gC0 _ _) ?_
-      refine Machine.EvStep.step (step_left_head gA1 _ _) ?_
+      evchain step_left_mk' gD0 _ _, step_left_mk' gE0 _ _, step_left_mk' gC0 _ _, step_left_head gA1 _ _
       refine (ih l (ListBlank.cons 𝟙 (ListBlank.cons 𝟙 (ListBlank.cons 𝟙 (ListBlank.cons 𝟙 r))))).trans ?_
-      refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-      refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-      exact Machine.EvStep.step (step_right_mk' gB1 _ _) Machine.EvStep.refl
+      evsteps step_right_mk' gB1 _ _, step_right_mk' gB1 _ _, step_right_mk' gB1 _ _, step_right_mk' gB1 _ _
 
 open Deciders.Skelet.FixedBin in
 /-- `LaR_inc` for `a = 0`. -/
@@ -396,22 +325,10 @@ lemma LaR_inc_zero {k : ℕ} {np ns : Bin k} (hn : Succ np ns) {m : PosNum} (hm 
       -[M]->* headL 3 ((Lk ns : List (Symbol 1)) ++ l)
         (ListBlank.cons 𝟙 (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 (ListBlank.cons 𝟘 (R m.succ))))) := by
   refine (Lk_inc hn l _).trans ?_
-  refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gB0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gC0 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gA0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gB0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
+  evchain step_right_mk' gB1 _ _, step_right_mk' gB0 _ _, step_right_mk' gC1 _ _, step_left_mk' gC0 _ _, step_left_mk' gA1 _ _, step_left_mk' gD1 _ _, step_right_mk' gA0 _ _, step_right_mk' gB0 _ _, step_right_mk' gC1 _ _, step_right_mk' gC1 _ _
   refine (R_inc_has0 hm _).trans ?_
   rw [headL_cons]
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  exact Machine.EvStep.step (step_left_head gA1 _ _) Machine.EvStep.refl
+  evsteps step_left_mk' gD1 _ _, step_left_mk' gA1 _ _, step_left_mk' gD1 _ _, step_left_head gA1 _ _
 
 open Deciders.Skelet.FixedBin in
 /-- `LaR_inc` for `a = 1`. -/
@@ -421,22 +338,10 @@ lemma LaR_inc_one {k : ℕ} {np ns : Bin k} (hn : Succ np ns) {m : PosNum} (hm :
       -[M]->* headL 3 ((Lk ns : List (Symbol 1)) ++ l)
         (ListBlank.cons 𝟙 (ListBlank.cons 𝟘 (ListBlank.cons 𝟙 (ListBlank.cons 𝟙 (R m.succ))))) := by
   refine (Lk_inc hn l _).trans ?_
-  refine Machine.EvStep.step (step_right_mk' gB1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gB0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
+  evchain step_right_mk' gB1 _ _, step_right_mk' gB0 _ _, step_right_mk' gC1 _ _, step_right_mk' gC1 _ _
   refine (R_inc_has0 hm _).trans ?_
   rw [headL_cons]
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gA0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gB0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gC0 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  exact Machine.EvStep.step (step_left_head gA1 _ _) Machine.EvStep.refl
+  evsteps step_left_mk' gD1 _ _, step_left_mk' gA1 _ _, step_left_mk' gD1 _ _, step_right_mk' gA0 _ _, step_right_mk' gB0 _ _, step_right_mk' gC1 _ _, step_left_mk' gC0 _ _, step_left_mk' gA1 _ _, step_left_mk' gD1 _ _, step_left_head gA1 _ _
 
 open Deciders.Skelet.FixedBin in
 /-- Coq `LaR_inc`. -/
@@ -672,27 +577,10 @@ lemma start_reset0 (n : Num) {m : PosNum} (h : All1 m) :
   refine Trans.trans (L_inc n _) (?_ : _ -[M]->+ _)
   rw [L_as_K]
   refine Trans.trans (Machine.Progress.single (step_right_mk' gB1 _ _)) (?_ : _ -[M]->* _)
-  refine Machine.EvStep.step (step_right_mk' gB0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gC0 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gA0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gB0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
+  evchain step_right_mk' gB0 _ _, step_right_mk' gC1 _ _, step_left_mk' gC0 _ _, step_left_mk' gA1 _ _, step_left_mk' gD1 _ _, step_right_mk' gA0 _ _, step_right_mk' gB0 _ _, step_right_mk' gC1 _ _, step_right_mk' gC1 _ _
   refine (R_inc_all1 h _).trans ?_
   rw [headL_cons]
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gA0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gB0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gC0 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  exact Machine.EvStep.step (step_left_head gA1 _ _) Machine.EvStep.refl
+  evsteps step_left_mk' gD1 _ _, step_left_mk' gA1 _ _, step_left_mk' gD1 _ _, step_right_mk' gA0 _ _, step_right_mk' gB0 _ _, step_right_mk' gC1 _ _, step_left_mk' gC0 _ _, step_left_mk' gA1 _ _, step_left_mk' gD1 _ _, step_left_head gA1 _ _
 
 /-
 `J (2*(n+1))` peels off four leading zeros.
@@ -720,18 +608,9 @@ lemma start_reset1_base (n : Num) :
   refine Trans.trans (L_inc n _) (?_ : _ -[M]->+ _)
   rw [L_as_J]
   refine Trans.trans (Machine.Progress.single (step_right_mk' gB1 _ _)) (?_ : _ -[M]->* _)
-  refine Machine.EvStep.step (step_right_mk' gB0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-  refine Machine.EvStep.step (step_left_blank gC0d _) ?_
-  refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gA1 _ _) ?_
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
+  evchain step_right_mk' gB0 _ _, step_right_mk' gC1 _ _, step_right_mk' gC1 _ _, step_right_mk' gC1 _ _, step_right_mk' gC1 _ _, step_left_blank gC0d _, step_left_mk' gA1 _ _, step_left_mk' gD1 _ _, step_left_mk' gA1 _ _, step_left_mk' gD1 _ _
   rw [hJ]
-  exact Machine.EvStep.step (step_left_head gA1 _ _) Machine.EvStep.refl
+  evsteps step_left_head gA1 _ _
 
 /-- Inductive case of `start_reset1` (`m = bit1 m0`). -/
 lemma start_reset1_step (n : Num) (m0 : PosNum) (h0 : All1 m0) (m'' : PosNum)
@@ -748,15 +627,13 @@ lemma start_reset1_step (n : Num) (m0 : PosNum) (h0 : All1 m0) (m'' : PosNum)
   refine Trans.trans (L_inc n _) (?_ : _ -[M]->+ _)
   rw [L_as_J]
   refine Trans.trans (Machine.Progress.single (step_right_mk' gB1 _ _)) (?_ : _ -[M]->* _)
-  refine Machine.EvStep.step (step_right_mk' gB0 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
-  refine Machine.EvStep.step (step_right_mk' gC1 _ _) ?_
+  evchain step_right_mk' gB0 _ _, step_right_mk' gC1 _ _, step_right_mk' gC1 _ _
   refine (R_inc_all1 (All1.bit1 h0)
     (ListBlank.cons 𝟙 (ListBlank.cons 𝟙 (ListBlank.cons 𝟘 (ListBlank.cons 𝟘 (ListBlank.cons 𝟘 (ListBlank.cons 𝟘 (J (Num.succ n))))))))).trans ?_
   rw [hR, headL_cons]
-  refine Machine.EvStep.step (step_left_mk' gD1 _ _) ?_
+  evchain step_left_mk' gD1 _ _
   rw [hJ]
-  exact Machine.EvStep.step (step_left_head gA1 _ _) Machine.EvStep.refl
+  evsteps step_left_head gA1 _ _
 
 /-- Coq `start_reset1`. -/
 lemma start_reset1 (n : Num) {m : PosNum} (h : All1 m) :
