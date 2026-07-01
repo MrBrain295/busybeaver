@@ -6,15 +6,10 @@ import Busybeaver.Deciders.FAR
 import Busybeaver.Deciders.Loop1
 import Busybeaver.Deciders.NGramCPS
 import Busybeaver.Deciders.RepWL
-import Busybeaver.Deciders.Sweep
 import Busybeaver.Deciders.WFAR
 import Busybeaver.Enumerate.Perm
 import Busybeaver.Enumerate.Symmetry
 import Busybeaver.TM.Table.Parse
-import Busybeaver.TM.Table.ClosedSet
-import Std.Data.HashMap
-import Busybeaver.Deciders.Skelet.FixedBin
-import Busybeaver.Deciders.Skelet.ShiftOverflow
 import Busybeaver.Deciders.Skelet.ShiftOverflowBins
 import Busybeaver.Deciders.Skelet.TapeCalc
 
