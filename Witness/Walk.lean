@@ -81,8 +81,8 @@ unsafe def walkRoots {l s : ℕ} (classify : Machine l s → IO Outcome) : IO Wa
 transitions, each child subtree is spawned as its own `Task` and joined; below
 it, the subtree runs serially inside the current task. Recovers the multi-core
 parallelism that the verified `BBComputeP` walk has (and that the serial `walk`
-threw away). Writes performed by `classify` must be thread-safe — `Store.put` is
-(it holds `writeLock`). -/
+threw away). Reads/writes performed by `classify` must be thread-safe — `Store.put`
+and `Store.get?` are (both hold `dbLock`). -/
 unsafe def walkPar {l s : ℕ} (classify : Machine l s → IO Outcome) (paraDepth : Nat)
     (M : Machine l s) : IO WalkResult := do
   match ← classify M with

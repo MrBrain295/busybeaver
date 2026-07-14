@@ -64,9 +64,11 @@ structure Store where
   db : SQLite
   insertStmt : SQLite.Stmt
   lookupStmt : SQLite.Stmt
-  /-- Serializes `put`s: the parallel emit walk writes from many `Task` threads
-  onto this one connection, so every write goes through this lock. -/
-  writeLock : Std.BaseMutex
+  /-- Serializes ALL connection access (`put` and `get?`). The parallel walks touch
+  this one connection and its shared prepared statements from many `Task` threads,
+  so every read and write must go through this lock — resetting/binding/stepping a
+  shared statement from two threads at once corrupts it. -/
+  dbLock : Std.BaseMutex
 
 namespace Store
 
@@ -136,16 +138,16 @@ def openAt (path : System.FilePath) : IO Store := do
   let lookupStmt ← db.prepare
     "SELECT kind, halt_state, halt_symbol, halt_steps, decider
      FROM witness WHERE code = ?;"
-  let writeLock ← Std.BaseMutex.new
-  return { db, insertStmt, lookupStmt, writeLock }
+  let dbLock ← Std.BaseMutex.new
+  return { db, insertStmt, lookupStmt, dbLock }
 
 /-! ## Write / read -/
 
-/-- Insert (or replace) one record. Thread-safe (guarded by `writeLock`), so the
+/-- Insert (or replace) one record. Thread-safe (guarded by `dbLock`), so the
 parallel emit walk can call it concurrently. Call inside `runTransaction` for
 bulk speed. -/
 def put (store : Store) (r : Record) : IO Unit := do
-  store.writeLock.lock
+  store.dbLock.lock
   try
     let stmt := store.insertStmt
     stmt.reset
@@ -162,25 +164,32 @@ def put (store : Store) (r : Record) : IO Unit := do
       | none => stmt.bindNull 8
     discard stmt.step
   finally
-    store.writeLock.unlock
+    store.dbLock.unlock
 
-/-- Look up a machine by its code. `none` means "not in the witness". -/
+/-- Look up a machine by its code. `none` means "not in the witness". Thread-safe
+(guarded by `dbLock`): the shared `lookupStmt` must not be reset/bound/stepped by
+two threads at once, which is exactly what the parallel `--trusted` self-healing
+walk would otherwise do. -/
 def get? (store : Store) (code : String) : IO (Option Record) := do
-  let stmt := store.lookupStmt
-  stmt.reset
-  stmt.clearBindings
-  stmt.bindText 1 code
-  if ← stmt.step then
-    let kindStr ← stmt.columnText 0
-    let some kind := Kind.ofString? kindStr
-      | throw <| IO.userError s!"witness: bad kind {kindStr} for {code}"
-    let haltState ← colOptNat stmt 1
-    let haltSymbol ← colOptNat stmt 2
-    let haltSteps ← colOptNat stmt 3
-    let decider ← colOptText stmt 4
-    return some { code, l := 0, s := 0, kind, haltState, haltSymbol, haltSteps, decider }
-  else
-    return none
+  store.dbLock.lock
+  try
+    let stmt := store.lookupStmt
+    stmt.reset
+    stmt.clearBindings
+    stmt.bindText 1 code
+    if ← stmt.step then
+      let kindStr ← stmt.columnText 0
+      let some kind := Kind.ofString? kindStr
+        | throw <| IO.userError s!"witness: bad kind {kindStr} for {code}"
+      let haltState ← colOptNat stmt 1
+      let haltSymbol ← colOptNat stmt 2
+      let haltSteps ← colOptNat stmt 3
+      let decider ← colOptText stmt 4
+      pure (some { code, l := 0, s := 0, kind, haltState, haltSymbol, haltSteps, decider })
+    else
+      pure none
+  finally
+    store.dbLock.unlock
 
 /-- Run `act` inside a single SQL transaction (deferred). Wrap a batch of `put`s
 in this — committing per row is ~100× slower. -/

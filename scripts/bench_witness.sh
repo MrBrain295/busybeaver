@@ -46,6 +46,14 @@ echo "generate: ${gen_ms}ms   (limit ${GEN_LIMIT_MS}ms)"
 echo "trusted:  ${trusted_ms}ms   (limit ${TRUSTED_LIMIT_MS}ms)"
 
 fail=0
+# The run must FULLY decide the size. An undecided/lower-bound result prints
+# `#Undec:` and `Busybeaver(...) >= N`; the value check alone would still pass
+# (--trusted replays the same incomplete aggregate), so reject it explicitly.
+if printf '%s\n' "$gen_out" | grep -qE '#Undec|≥'; then
+  echo "FAIL: generation did not fully decide (undecided / lower-bound result):"
+  printf '%s\n' "$gen_out" | grep -E 'Busybeaver|#Undec'
+  fail=1
+fi
 if [ -z "$gen_val" ] || [ "$gen_val" != "$trusted_val" ]; then
   echo "FAIL: trusted value ($trusted_val) does not match generated value ($gen_val)"; fail=1
 fi

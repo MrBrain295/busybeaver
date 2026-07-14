@@ -519,10 +519,12 @@ unsafe def computeCmd (p: Parsed): IO UInt32 := do
       | some (bbValue, _decided, holdouts) =>
           printResult "[trusted] " bbValue holdouts
       | none =>
+          -- No cached aggregate: walk the witness, self-healing misses with the real
+          -- deciders. Each `put` self-commits (no wrapping transaction) so a failure
+          -- in one parallel task cannot roll back the others' self-healed rows.
           IO.println "[trusted] no cached result; walking witness (self-healing misses)…"
-          let res ← store.runTransaction
-            (Witness.walkRootsPar (l := l) (s := s)
-              (fun M => trustedClassify store (emitClassify store cfg) M))
+          let res ← Witness.walkRootsPar (l := l) (s := s)
+            (fun M => trustedClassify store (emitClassify store cfg) M)
           store.putResult l s res.bbValue res.holdouts
           printResult "[trusted] " res.bbValue res.holdouts
   else if p.hasFlag "verify" then
