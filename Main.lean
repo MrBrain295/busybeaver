@@ -7,6 +7,8 @@ import Lean.Data.Json
 
 import Cli
 
+import LeanTqdm
+
 open TM TM.Table
 
 instance: ToString (HaltM M α) where
@@ -282,6 +284,38 @@ def determineConfig (l s : ℕ): (Option String) → IO (List DeciderConfig)
 
 end DeciderCombinator
 
+section Progress
+
+open Tqdm
+
+instance {l s : ℕ} {M : Machine l s} [Inhabited α] : Inhabited (HaltM M α) := ⟨.unknown default⟩
+
+/-- Advance `pb` by one as a deliberate side effect inside otherwise-pure code, then return `x`.
+Modeled on `dbg_trace`: `@[never_extract]` keeps the compiler from dropping, hoisting, or CSE-ing
+the call, and threading `x` through the return value creates a data dependency so the call is not
+discarded.  The two `match` branches must differ (the unreachable `.error` panics) so the compiler
+cannot merge them and elide the `unsafeIO` scrutinee as dead code — that scrutiny is what forces
+the `IO` action to actually run. -/
+@[never_extract] unsafe def tickReturn [Inhabited α] (pb : ProgressBar) (x : α) : α :=
+  match unsafeIO pb.update with
+  | .ok _ => x
+  | .error _ => panic! "progress bar update failed"
+
+/-- Compiled implementation of `tickDecider`: tick the bar, then defer to `dec`. -/
+unsafe def tickDeciderImpl (pb : ProgressBar) (dec : (M : Machine l s) → HaltM M Unit)
+    (M : Machine l s) : HaltM M Unit :=
+  tickReturn pb (dec M)
+
+/-- Decider wrapper that advances `pb` once per call.  The kernel sees the identity `fun M => dec M`
+(so the correctness proof in `computeCmd` is unaffected), while the compiled code runs
+`tickDeciderImpl` and ticks the progress bar.  The enumeration core invokes the decider exactly
+once per visited machine, so the bar reflects machines processed. -/
+@[implemented_by tickDeciderImpl]
+def tickDecider (_pb : ProgressBar) (dec : (M : Machine l s) → HaltM M Unit)
+    (M : Machine l s) : HaltM M Unit := dec M
+
+end Progress
+
 section Cli
 
 open Cli
@@ -431,13 +465,19 @@ unsafe def runExportCmd (p: Parsed): IO UInt32 := do
   let cfg ← determineConfig l s ((p.flag? "config").map (Parsed.Flag.as! · String))
 
   IO.FS.withFile output IO.FS.Mode.write fun h => do
-    let emit (line: String): IO Unit := h.putStrLn line
-    if l = 0 then
-      -- Single-state machines are trivial; emit the lone seed result.
-      exportRec cfg (Busybeaver.BBCompute.m1RB l s) emit
-    else
-      exportRec cfg (Busybeaver.BBCompute.m0RB l s) emit
-      exportRec cfg (Busybeaver.BBCompute.m1RB l s) emit
+    Tqdm.withProgressBar (cfg := {}) fun pb => do
+      pb.setDescription s!"enumerate {l + 1}×{s + 1}"
+      -- `exportRec` calls `emit` exactly once per enumerated machine, so ticking here counts
+      -- machines streamed.  The total is unknown up front, so this is a count-only bar.
+      let emit (line: String): IO Unit := do
+        h.putStrLn line
+        pb.update
+      if l = 0 then
+        -- Single-state machines are trivial; emit the lone seed result.
+        exportRec cfg (Busybeaver.BBCompute.m1RB l s) emit
+      else
+        exportRec cfg (Busybeaver.BBCompute.m0RB l s) emit
+        exportRec cfg (Busybeaver.BBCompute.m1RB l s) emit
   return 0
 
 unsafe def exportCmd := `[Cli|
@@ -486,8 +526,8 @@ unsafe def computeCmd (p: Parsed): IO UInt32 := do
           store.putResult l s res.bbValue res.holdouts
           printResult "[trusted] " res.bbValue res.holdouts
   else if p.hasFlag "verify" then
-    -- Certified path: the pure verified `compute`. The printed value carries the
-    -- `correct_complete` certificate. No emission.
+    -- Certified path: the pure verified `compute`, with a live progress bar. The
+    -- printed value carries the `correct_complete` certificate. No emission.
     let dec := toLogDecider cfg (p.hasFlag "quiet")
     if hl: l = 0 then
       have _: Busybeaver l s = 0 := by {
@@ -497,19 +537,28 @@ unsafe def computeCmd (p: Parsed): IO UInt32 := do
       IO.println s!"Busybeaver(1, {s+1}) = 1"
     else
       IO.println "Starting verified computation"
-      let comp := compute l s dec
-      if hcomp: comp.undec = ∅ then
-        have _: comp.val = Busybeaver l s := by {
-          simp [comp] at *
-          simp [compute]
-          exact Eq.symm (Busybeaver.BBCompute.correct_complete hl hcomp)
-        }
-        IO.println s!"Busybeaver({l + 1}, {s + 1}) = {comp.val + 1}"
-      else
-        IO.println s!"#Undec: {Multiset.card comp.undec}"
-        IO.println s!"Busybeaver({l + 1}, {s + 1}) ≥ {comp.val + 1}"
-        if let some path := p.flag? "output" then
-          save_to_file (path.as! String) comp.undec
+      -- Run inside the progress-bar block (so it ticks live) and defer the result
+      -- lines until after the bar closes — writing to stdout mid-bar desyncs the
+      -- shared-terminal cursor from the bar manager's bookkeeping.
+      let resultLines ← Tqdm.withProgressBar (cfg := {}) fun pb => do
+        pb.setDescription s!"BB({l + 1}, {s + 1})"
+        -- `tickDecider pb dec` is the identity `dec` to the kernel (proof unaffected) but
+        -- advances `pb` once per visited machine when compiled.
+        let comp := compute l s (tickDecider pb dec)
+        if hcomp: comp.undec = ∅ then
+          have _: comp.val = Busybeaver l s := by {
+            simp [comp] at *
+            simp [compute]
+            exact Eq.symm (Busybeaver.BBCompute.correct_complete hl hcomp)
+          }
+          return #[s!"Busybeaver({l + 1}, {s + 1}) = {comp.val + 1}"]
+        else
+          if let some path := p.flag? "output" then
+            save_to_file (path.as! String) comp.undec
+          return #[s!"#Undec: {Multiset.card comp.undec}",
+                   s!"Busybeaver({l + 1}, {s + 1}) ≥ {comp.val + 1}"]
+      for line in resultLines do
+        IO.println line
   else
     -- Default: generate the witness with a SINGLE parallel walk — deciders run
     -- once across all cores — then cache the aggregate so `--trusted` is instant.
