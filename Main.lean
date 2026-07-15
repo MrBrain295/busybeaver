@@ -137,15 +137,15 @@ def firstDecisionFull?: List DeciderConfig → (M: Machine l s) → Option (Deci
     else
       firstDecisionFull? ds M
 
-/-- Like `firstDecision?` but keeps the proof-carrying `HaltM` alongside the name
-of the decider that settled it (or `.unknown`/`none` if none did). Used to emit
-witness records with provenance. -/
-def decideWithProvenance: List DeciderConfig → (M: Machine l s) → (HaltM M Unit × Option String)
-| [], _ => (.unknown (), none)
-| d :: ds, M =>
-    let res := d.deciderTable M
-    if HaltM.decided res then (res, some (toString d))
-    else decideWithProvenance ds M
+/-- Like `firstDecisionFull?` but keeps the proof-carrying `HaltM` alongside the
+*name* of the decider that settled it (or `.unknown`/`none` if none did). Used to
+emit witness records with provenance. Thin wrapper so the decision loop lives in
+one place (`firstDecisionFull?`). -/
+def decideWithProvenance (cfg: List DeciderConfig) (M: Machine l s) :
+    (HaltM M Unit × Option String) :=
+  match firstDecisionFull? cfg M with
+  | some (d, res) => (res, some (toString d))
+  | none => (.unknown (), none)
 
 /-- Emit-mode classifier: run the real deciders on `M`, write the resulting
 record to the witness store, and report the `Outcome` so the walk can expand
@@ -178,8 +178,11 @@ a single writer task drains the channel into SQLite. No write contention. -/
 def emitClassifyChan (chan: Std.CloseableChannel Witness.Record) (cfg: List DeciderConfig)
     (M: Machine l s): IO Witness.Outcome := do
   let (rec, outcome) := classifyRecord cfg M
-  let _ ← chan.send rec
-  return outcome
+  -- Don't swallow the send result: a closed channel would otherwise drop the
+  -- record silently, leaving an under-populated DB that `--trusted` trusts.
+  match (← chan.send rec).get with
+  | .ok _ => return outcome
+  | .error _ => throw <| IO.userError s!"witness: channel send failed for {rec.code} (closed?)"
 
 /-- Trusted-mode classifier: read `M`'s outcome from the store. On a miss, fall
 back to `fallback` (typically `emitClassify`, which also self-heals the DB). -/
@@ -188,7 +191,13 @@ def trustedClassify (store: Witness.Store) (fallback: Machine l s → IO Witness
   match ← store.get? (reprStr M) with
   | some rec =>
       match rec.kind with
-      | .halt => return .halt (rec.haltState.getD 0) (rec.haltSymbol.getD 0) (rec.haltSteps.getD 0)
+      | .halt =>
+          -- A halt row must carry its cell + step count; a NULL means a corrupt /
+          -- partial write, so surface it rather than silently expanding cell (0,0).
+          match rec.haltState, rec.haltSymbol, rec.haltSteps with
+          | some st, some sy, some steps => return .halt st sy steps
+          | _, _, _ =>
+              throw <| IO.userError s!"witness: halt row for {reprStr M} has NULL halt metadata"
       | .nonhalt => return .nonhalt
       | .unknown => return .unknown
   | none => fallback M
@@ -501,6 +510,11 @@ unsafe def computeCmd (p: Parsed): IO UInt32 := do
   let cfg ← determineConfig l s ((p.flag? "config").map (Parsed.Flag.as! · String))
   let witnessPath := (p.flag? "witness").map (Parsed.Flag.as! · String) |>.getD "witness.db"
 
+  -- `--trusted` (unverified cache) and `--verify` (certified compute) are mutually
+  -- exclusive; reject the combination rather than silently letting one win.
+  if p.hasFlag "trusted" && p.hasFlag "verify" then
+    throw <| IO.userError "cannot combine --trusted with --verify"
+
   let printResult (lbl : String) (bbValue : Nat) (holdouts : Array String) : IO Unit := do
     if holdouts.isEmpty then
       IO.println s!"{lbl}Busybeaver({l + 1}, {s + 1}) = {bbValue}"
@@ -575,13 +589,21 @@ unsafe def computeCmd (p: Parsed): IO UInt32 := do
       -- deciders instead of serializing them.
       let chan : Std.CloseableChannel Witness.Record ← Std.CloseableChannel.new
       let writer ← IO.asTask (store.drainChannel chan)
-      let res ← Witness.walkRootsPar (l := l) (s := s) (fun M => emitClassifyChan chan cfg M)
-      let _ ← (chan.close).toBaseIO
-      let _ ← IO.ofExcept writer.get
+      -- Close the channel and drain/await the writer even if the walk raises, so the
+      -- writer task can't be left blocked on `recv` with an open transaction.
+      let res ← do
+        try
+          Witness.walkRootsPar (l := l) (s := s) (fun M => emitClassifyChan chan cfg M)
+        finally
+          let _ ← (chan.close).toBaseIO
+          let _ ← IO.ofExcept writer.get
       store.putResult l s res.bbValue res.holdouts
       printResult "" res.bbValue res.holdouts
-      if let some path := p.flag? "output" then
-        IO.FS.writeFile (path.as! String) (String.intercalate "\n" res.holdouts.toList)
+      -- Only (re)write the holdout file when there ARE holdouts, matching `--verify`;
+      -- otherwise a fully-decided run would truncate an existing --output file to empty.
+      unless res.holdouts.isEmpty do
+        if let some path := p.flag? "output" then
+          IO.FS.writeFile (path.as! String) (String.intercalate "\n" res.holdouts.toList)
       IO.println s!"witness: {← store.count} machines → {witnessPath}"
   IO.println s!"In: {(← IO.monoMsNow) - start}ms"
   return 0

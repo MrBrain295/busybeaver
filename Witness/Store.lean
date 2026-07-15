@@ -74,7 +74,12 @@ namespace Store
 
 /-! ## Nat ↔ Int64 / binding helpers -/
 
-private def natToI64 (n : Nat) : Int64 := Int64.ofNat n
+-- SQLite `INTEGER`s are signed 64-bit, so only `Nat`s below `2^63` round-trip.
+-- All values stored here (step counts, cell indices, sizes) are far below that;
+-- panic loudly rather than silently wrap if that ever stops being true.
+private def natToI64 (n : Nat) : Int64 :=
+  if n < 2 ^ 63 then Int64.ofNat n
+  else panic! s!"witness: value {n} exceeds the signed 64-bit range"
 private def i64ToNat (n : Int64) : Nat := n.toInt.toNat
 
 private def bindOptNat (stmt : SQLite.Stmt) (idx : Int32) : Option Nat → IO Unit
@@ -131,6 +136,14 @@ def openAt (path : System.FilePath) : IO Store := do
   db.exec ddl
   -- Record the schema version if this is a fresh database.
   db.exec s!"INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '{schemaVersion}');"
+  -- Validate it: the INSERT OR IGNORE sets it on a fresh DB but leaves an existing
+  -- DB's own value, so a mismatch here means an incompatible witness file.
+  let vstmt ← db.prepare "SELECT value FROM meta WHERE key = 'schema_version';"
+  if ← vstmt.step then
+    let stored ← vstmt.columnText 0
+    if stored != toString schemaVersion then
+      throw <| IO.userError
+        s!"witness: DB {path} has schema version {stored}, expected {schemaVersion}; regenerate it"
   let insertStmt ← db.prepare
     "INSERT OR REPLACE INTO witness
        (code, l, s, kind, halt_state, halt_symbol, halt_steps, decider)

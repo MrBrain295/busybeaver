@@ -108,7 +108,7 @@ unsafe def walkPar {l s : ℕ} (classify : Machine l s → IO Outcome) (paraDept
 
 /-- Parallel version of `walkRoots`: the two roots run as concurrent tasks too. -/
 unsafe def walkRootsPar {l s : ℕ} (classify : Machine l s → IO Outcome)
-    (paraDepth : Nat := 3) : IO WalkResult := do
+    (paraDepth : Nat := PARA_DEPTH) : IO WalkResult := do
   let t0 ← IO.asTask (walkPar classify paraDepth (BBCompute.m0RB l s))
   let t1 ← IO.asTask (walkPar classify paraDepth (BBCompute.m1RB l s))
   let r0 ← IO.ofExcept t0.get
