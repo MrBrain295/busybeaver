@@ -27,6 +27,13 @@ jobs:
       - name: Smoke test CLI
         run: lake exe beaver -h
 
+      - name: Witness store benchmark
+        # Guards the witness store: generate == trusted == verified, and each stays
+        # under its bound. The bounds are loose here because CI runners have far
+        # fewer cores than a dev box (the strict defaults are for local use); this
+        # still catches gross perf regressions and any value divergence.
+        run: GEN_LIMIT_MS=180000 TRUSTED_LIMIT_MS=5000 scripts/bench_witness.sh
+
       - name: Generate sorry report
         run: ci/sorry_report.sh sorry-report.txt
 

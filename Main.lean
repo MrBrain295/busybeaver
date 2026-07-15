@@ -1,4 +1,5 @@
 import Busybeaver
+import Witness
 import Mathlib.Data.Nat.Notation
 import Init.Data.String
 
@@ -135,6 +136,71 @@ def firstDecisionFull?: List DeciderConfig → (M: Machine l s) → Option (Deci
       some (d, res)
     else
       firstDecisionFull? ds M
+
+/-- Like `firstDecisionFull?` but keeps the proof-carrying `HaltM` alongside the
+*name* of the decider that settled it (or `.unknown`/`none` if none did). Used to
+emit witness records with provenance. Thin wrapper so the decision loop lives in
+one place (`firstDecisionFull?`). -/
+def decideWithProvenance (cfg: List DeciderConfig) (M: Machine l s) :
+    (HaltM M Unit × Option String) :=
+  match firstDecisionFull? cfg M with
+  | some (d, res) => (res, some (toString d))
+  | none => (.unknown (), none)
+
+/-- Emit-mode classifier: run the real deciders on `M`, write the resulting
+record to the witness store, and report the `Outcome` so the walk can expand
+children. The halt cell `(state, symbol)` and actual step count `n+1` are pulled
+straight from the decider's `halts_prf` proof. -/
+def classifyRecord (cfg: List DeciderConfig) (M: Machine l s):
+    Witness.Record × Witness.Outcome :=
+  let (res, who) := decideWithProvenance cfg M
+  let code := reprStr M
+  match res with
+  | .halts_prf n C _ =>
+      let st := C.state.val
+      let sy := C.tape.head.val
+      ({ code, l, s, kind := .halt,
+         haltState := some st, haltSymbol := some sy, haltSteps := some (n + 1),
+         decider := who }, .halt st sy (n + 1))
+  | .loops_prf _ => ({ code, l, s, kind := .nonhalt, decider := who }, .nonhalt)
+  | .unknown _ => ({ code, l, s, kind := .unknown }, .unknown)
+
+/-- Direct-write emit classifier (writes via the locked `Store.put`; used by the
+self-healing trusted fallback, where writes can be concurrent). -/
+def emitClassify (store: Witness.Store) (cfg: List DeciderConfig) (M: Machine l s):
+    IO Witness.Outcome := do
+  let (rec, outcome) := classifyRecord cfg M
+  store.put rec
+  return outcome
+
+/-- Channel-feeding emit classifier: the decider threads only `send` records, and
+a single writer task drains the channel into SQLite. No write contention. -/
+def emitClassifyChan (chan: Std.CloseableChannel Witness.Record) (cfg: List DeciderConfig)
+    (M: Machine l s): IO Witness.Outcome := do
+  let (rec, outcome) := classifyRecord cfg M
+  -- Don't swallow the send result: a closed channel would otherwise drop the
+  -- record silently, leaving an under-populated DB that `--trusted` trusts.
+  match (← chan.send rec).get with
+  | .ok _ => return outcome
+  | .error _ => throw <| IO.userError s!"witness: channel send failed for {rec.code} (closed?)"
+
+/-- Trusted-mode classifier: read `M`'s outcome from the store. On a miss, fall
+back to `fallback` (typically `emitClassify`, which also self-heals the DB). -/
+def trustedClassify (store: Witness.Store) (fallback: Machine l s → IO Witness.Outcome)
+    (M: Machine l s): IO Witness.Outcome := do
+  match ← store.get? (reprStr M) with
+  | some rec =>
+      match rec.kind with
+      | .halt =>
+          -- A halt row must carry its cell + step count; a NULL means a corrupt /
+          -- partial write, so surface it rather than silently expanding cell (0,0).
+          match rec.haltState, rec.haltSymbol, rec.haltSteps with
+          | some st, some sy, some steps => return .halt st sy steps
+          | _, _, _ =>
+              throw <| IO.userError s!"witness: halt row for {reprStr M} has NULL halt metadata"
+      | .nonhalt => return .nonhalt
+      | .unknown => return .unknown
+  | none => fallback M
 
 def configFromFile (path: String): IO (Option <| List DeciderConfig) := do
   let content ← IO.FS.readFile path
@@ -442,41 +508,103 @@ unsafe def computeCmd (p: Parsed): IO UInt32 := do
   let s := (p.positionalArg! "nsyms" |>.as! ℕ) - 1
 
   let cfg ← determineConfig l s ((p.flag? "config").map (Parsed.Flag.as! · String))
-  let dec := toLogDecider cfg (p.hasFlag "quiet")
+  let witnessPath := (p.flag? "witness").map (Parsed.Flag.as! · String) |>.getD "witness.db"
 
-  if hl: l = 0 then
-    have _: Busybeaver l s = 0 := by {
-      rw [hl]
-      exact Busybeaver.one_state
-    }
-    IO.println s!"Busybeaver(1, {s+1}) = 1"
+  -- `--trusted` (unverified cache) and `--verify` (certified compute) are mutually
+  -- exclusive; reject the combination rather than silently letting one win.
+  if p.hasFlag "trusted" && p.hasFlag "verify" then
+    throw <| IO.userError "cannot combine --trusted with --verify"
+
+  let printResult (lbl : String) (bbValue : Nat) (holdouts : Array String) : IO Unit := do
+    if holdouts.isEmpty then
+      IO.println s!"{lbl}Busybeaver({l + 1}, {s + 1}) = {bbValue}"
+    else
+      IO.println s!"{lbl}#Undec: {holdouts.size}"
+      IO.println s!"{lbl}Busybeaver({l + 1}, {s + 1}) ≥ {bbValue}"
+
+  if p.hasFlag "trusted" then
+    -- Unverified fast path. Prefer the cached aggregate (one row → instant); only
+    -- if this size was never generated do we walk the witness (self-healing).
+    if l = 0 then
+      IO.println s!"Busybeaver(1, {s+1}) = 1"
+    else
+      let store ← Witness.Store.openAt witnessPath
+      match ← store.getResult? l s with
+      | some (bbValue, _decided, holdouts) =>
+          printResult "[trusted] " bbValue holdouts
+      | none =>
+          -- No cached aggregate: walk the witness, self-healing misses with the real
+          -- deciders. Each `put` self-commits (no wrapping transaction) so a failure
+          -- in one parallel task cannot roll back the others' self-healed rows.
+          IO.println "[trusted] no cached result; walking witness (self-healing misses)…"
+          let res ← Witness.walkRootsPar (l := l) (s := s)
+            (fun M => trustedClassify store (emitClassify store cfg) M)
+          store.putResult l s res.bbValue res.holdouts
+          printResult "[trusted] " res.bbValue res.holdouts
+  else if p.hasFlag "verify" then
+    -- Certified path: the pure verified `compute`, with a live progress bar. The
+    -- printed value carries the `correct_complete` certificate. No emission.
+    let dec := toLogDecider cfg (p.hasFlag "quiet")
+    if hl: l = 0 then
+      have _: Busybeaver l s = 0 := by {
+        rw [hl]
+        exact Busybeaver.one_state
+      }
+      IO.println s!"Busybeaver(1, {s+1}) = 1"
+    else
+      IO.println "Starting verified computation"
+      -- Run inside the progress-bar block (so it ticks live) and defer the result
+      -- lines until after the bar closes — writing to stdout mid-bar desyncs the
+      -- shared-terminal cursor from the bar manager's bookkeeping.
+      let resultLines ← Tqdm.withProgressBar (cfg := {}) fun pb => do
+        pb.setDescription s!"BB({l + 1}, {s + 1})"
+        -- `tickDecider pb dec` is the identity `dec` to the kernel (proof unaffected) but
+        -- advances `pb` once per visited machine when compiled.
+        let comp := compute l s (tickDecider pb dec)
+        if hcomp: comp.undec = ∅ then
+          have _: comp.val = Busybeaver l s := by {
+            simp [comp] at *
+            simp [compute]
+            exact Eq.symm (Busybeaver.BBCompute.correct_complete hl hcomp)
+          }
+          return #[s!"Busybeaver({l + 1}, {s + 1}) = {comp.val + 1}"]
+        else
+          if let some path := p.flag? "output" then
+            save_to_file (path.as! String) comp.undec
+          return #[s!"#Undec: {Multiset.card comp.undec}",
+                   s!"Busybeaver({l + 1}, {s + 1}) ≥ {comp.val + 1}"]
+      for line in resultLines do
+        IO.println line
   else
-    IO.println "Starting computation"
-    -- Run the computation *inside* the progress-bar block (so the bar ticks live), but
-    -- collect the result lines and print them only *after* the bar closes.  Writing to
-    -- stdout while the bar is active desyncs the shared-terminal cursor from the bar
-    -- manager's bookkeeping, so the final `pb.close` redraw clears/overwrites the result
-    -- line in an interactive run.  Returning the lines defers all user-visible stdout.
-    let resultLines ← Tqdm.withProgressBar (cfg := {}) fun pb => do
-      pb.setDescription s!"BB({l + 1}, {s + 1})"
-      -- `tickDecider pb dec` is the identity `dec` to the kernel (proof below is unaffected) but
-      -- advances `pb` once per visited machine when compiled, giving a live count during the
-      -- parallel enumeration.
-      let comp := compute l s (tickDecider pb dec)
-      if hcomp: comp.undec = ∅ then
-        have _: comp.val = Busybeaver l s := by {
-          simp [comp] at *
-          simp [compute]
-          exact Eq.symm (Busybeaver.BBCompute.correct_complete hl hcomp)
-        }
-        return #[s!"Busybeaver({l + 1}, {s + 1}) = {comp.val + 1}"]
-      else
+    -- Default: generate the witness with a SINGLE parallel walk — deciders run
+    -- once across all cores — then cache the aggregate so `--trusted` is instant.
+    -- Unverified; use `--verify` for the certified value.
+    if l = 0 then
+      IO.println s!"Busybeaver(1, {s+1}) = 1"
+    else
+      IO.println "Generating witness (parallel)…"
+      let store ← Witness.Store.openAt witnessPath
+      -- One writer task owns the SQLite connection and drains a channel; the
+      -- parallel walk's threads only `send` records, so writes overlap the
+      -- deciders instead of serializing them.
+      let chan : Std.CloseableChannel Witness.Record ← Std.CloseableChannel.new
+      let writer ← IO.asTask (store.drainChannel chan)
+      -- Close the channel and drain/await the writer even if the walk raises, so the
+      -- writer task can't be left blocked on `recv` with an open transaction.
+      let res ← do
+        try
+          Witness.walkRootsPar (l := l) (s := s) (fun M => emitClassifyChan chan cfg M)
+        finally
+          let _ ← (chan.close).toBaseIO
+          let _ ← IO.ofExcept writer.get
+      store.putResult l s res.bbValue res.holdouts
+      printResult "" res.bbValue res.holdouts
+      -- Only (re)write the holdout file when there ARE holdouts, matching `--verify`;
+      -- otherwise a fully-decided run would truncate an existing --output file to empty.
+      unless res.holdouts.isEmpty do
         if let some path := p.flag? "output" then
-          save_to_file (path.as! String) comp.undec
-        return #[s!"#Undec: {Multiset.card comp.undec}",
-                 s!"Busybeaver({l + 1}, {s + 1}) ≥ {comp.val + 1}"]
-    for line in resultLines do
-      IO.println line
+          IO.FS.writeFile (path.as! String) (String.intercalate "\n" res.holdouts.toList)
+      IO.println s!"witness: {← store.count} machines → {witnessPath}"
   IO.println s!"In: {(← IO.monoMsNow) - start}ms"
   return 0
 
@@ -489,6 +617,9 @@ unsafe def mainCmd := `[Cli|
     o, output: String; "Where to store the holdout list after execution"
     q, quiet; "Disable logging of holdouts during resolution"
     nt, "no-time"; "Don't print resolution time after execution"
+    w, witness: String; "Path to the witness SQLite database (default: witness.db)"
+    t, trusted; "Read the cached result from the witness DB (unverified, instant)"
+    v, verify; "Run the pure verified computation (certified value, no witness emission)"
 
   ARGS:
     nlabs: ℕ; "Number of labels for the machines"
