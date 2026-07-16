@@ -250,17 +250,19 @@ lemma rule_xn_right (n : ℕ) (l r : LB) :
 
 lemma rule_P_xn (n : ℕ) (l r : LB) :
     AR l (P ++ lpow x n ++ r) -[M]->* AR (lpow x n ++ l) (P ++ r) := by
-      --Induct on n, so we can rewrite `lpow x n` and split the goal using the sheet’relation for `lpow x (n+1) = x ++ lpow x n`
-      induction n generalizing l r;
-      · -- In the `n = 0` case, `lpow x 0 = []`, so both sides become `AR l (P ++ r)`.
-        -- We can close this by `refl` (or `simp` followed by `refl` for the empty list Normalize).
-        · simp [lpow_zero]
-          exact Machine.EvStep.refl;
-      · rename_i n ih;
-        -- Applying the induction hypothesis to the left-hand side of the conjunction.
-        have h_ind : AR l (P ++ x ++ lpow x n ++ r) -[M]->* AR (x ++ l) (P ++ lpow x n ++ r) := by
-          convert rule_P_x l ( lpow x n ++ r ) using 1;
-        grind +suggestions
+  induction n generalizing l r with
+    | zero =>
+        simp [lpow]
+        exact Machine.EvStep.refl
+    | succ n ih =>
+        rw [lpow_succ]
+        have h1 := rule_P_x l (lpow x n ++ r)
+        have h2 := ih (x ++ l) r
+        simp only [ListBlank.append_assoc'] at h1 h2 ⊢
+        refine Machine.EvStep.trans h1 ?_
+        convert h2 using 1
+        congr 1
+        exact lpow_comm n l
 
 /-- One `x^n Dr` segment swept right (right-associated form). -/
 lemma rule_xD_right (n : ℕ) (l r : LB) :
