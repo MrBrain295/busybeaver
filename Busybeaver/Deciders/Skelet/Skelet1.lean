@@ -223,18 +223,30 @@ lemma rule_xn_left (n : ℕ) (l r : LB) :
           simpa [ListBlank.append_assoc'] using
             (rule_x_left _ _).trans (ih _ _)
 
+lemma lpow_x_comm (n : ℕ) : lpow x n ++ x = x ++ lpow x n := by
+  rw [← lpow_succ']
+  rw [lpow_succ]
+
+lemma lpow_comm (n : ℕ) (l : LB) :
+    x ++ (lpow x n ++ l) = lpow x n ++ (x ++ l) := by
+  induction n with
+  | zero =>
+      simp [lpow]
+  | succ n ih =>
+      simp [lpow_succ, ListBlank.append_assoc', ih]
+
 lemma rule_xn_right (n : ℕ) (l r : LB) :
     AR l (lpow x n ++ r) -[M]->* AR (lpow x n ++ l) r := by
-      convert rule_P_x using 1;
-      constructor <;> intro h;
-      · exact fun l r => rule_P_x l r;
-      · induction n generalizing l r <;> simp_all +decide [ lpow_succ' ];
-        · exact Machine.EvStep.refl;
-        · rename_i n ih;
-          convert ih l ( x ++ r ) |> fun h => h.trans _ using 1;
-          · simp +decide [ AR, Tape.mk', ListBlank.append_assoc' ];
-          · rw [ ← lpow_succ' ];
-            grind +suggestions
+  induction n generalizing l r with
+  | zero =>
+      simp [lpow]
+      exact Machine.EvStep.refl
+    | succ n ih =>
+        rw [lpow_succ]
+        refine Machine.EvStep.trans (rule_x_right l (lpow x n ++ r)) ?_
+        convert ih (x ++ l) r using 1
+        congr 1
+        exact lpow_comm n l
 
 lemma rule_P_xn (n : ℕ) (l r : LB) :
     AR l (P ++ lpow x n ++ r) -[M]->* AR (lpow x n ++ l) (P ++ r) := by
