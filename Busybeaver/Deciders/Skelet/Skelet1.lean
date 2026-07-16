@@ -210,22 +210,24 @@ lemma rule_xn_left (n : ℕ) (l r : LB) :
     CL (lpow x n ++ l) r -[M]->* CL l (lpow x n ++ r) := by
       -- Apply `lpow_succ'` to rewrite `lpow x (n+1)` in terms of `lpow x n`.
       have h_lpow_succ : ∀ (n : ℕ), lpow x (n + 1) = lpow x n ++ x := by
-        exact?;
-      induction n generalizing l r <;> simp_all +decide [ List.append_assoc ];
+        exact fun n => lpow_succ' x n;
+      induction n generalizing l r <;> simp_all +decide;
       · exact Machine.EvStep.refl;
       · rename_i n ih; convert ih _ _ |> Machine.EvStep.trans <| rule_x_left _ _ using 1;
         congr! 1;
         rotate_right;
         exact l;
-        · exact?;
-        · simp +decide [ ← List.append_assoc, ← h_lpow_succ ];
-          grind +suggestions
+        · exact ListBlank.append_assoc';
+        · simp +decide [← h_lpow_succ];
+          rw [lpow_succ]
+          simpa [ListBlank.append_assoc'] using
+            (rule_x_left _ _).trans (ih _ _)
 
 lemma rule_xn_right (n : ℕ) (l r : LB) :
     AR l (lpow x n ++ r) -[M]->* AR (lpow x n ++ l) r := by
       convert rule_P_x using 1;
       constructor <;> intro h;
-      · exact?;
+      · exact fun l r => rule_P_x l r;
       · induction n generalizing l r <;> simp_all +decide [ lpow_succ' ];
         · exact Machine.EvStep.refl;
         · rename_i n ih;
@@ -286,7 +288,7 @@ lemma rule_Gn_right (n : ℕ) (l r : LB) :
                                         rw [ ← lpow_succ' ];
                                         rw [ lpow_succ ] ] ;
         convert rule_G_right l ( lpow Gr n ++ r ) |> Machine.EvStep.trans <| ih _ _ using 1;
-        exact congr_arg₂ _ ( by exact? ) rfl
+        exact congr_arg₂ _ ( by exact ListBlank.append_assoc' ) rfl
 
 lemma rule_Gn_left (n : ℕ) (l r : LB) :
     CL (lpow Gl n ++ l) r -[M]->* CL l (lpow Gr n ++ r) := by
@@ -326,7 +328,7 @@ lemma rule_P_DG (l r : LB) :
 lemma rule_P_DGn (n : ℕ) (l r : LB) :
     AR l (P ++ Dr ++ lpow Gr n ++ r) -[M]->* AR (lpow Hl n ++ l) (P ++ Dr ++ r) := by
       revert l;
-      induction n <;> simp_all +decide [ lpow_succ, lpow_succ' ];
+      induction n <;> simp_all +decide [lpow_succ];
       · exact fun l => Machine.EvStep.refl;
       · rename_i n ih;
         intro l
