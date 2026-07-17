@@ -1,6 +1,8 @@
 import Busybeaver.Deciders.Skelet.Skelet1Helpers
 import Busybeaver.TM.Table.ClosedSet
-import Mathlib.Tactic
+import Mathlib.Tactic.Ring
+import Mathlib.Tactic.Linarith
+import Mathlib.Tactic.Cases
 
 /-!
 # Skelet #1 — universe cycle and non-halting
@@ -62,18 +64,22 @@ def uni_T : ℕ := 4 * uni_P - 5
 
 /-- Coq `uni_cycle`.  A single universe period: given a stride of length
 `uni_T` on the right tape, the configuration advances by consuming `uni_P` from
-the `l_xs` counter and appending one `F` on the left and one `G` on the right. -/
+the `l_xs` counter and appending one `F` on the left and one `G` on the right. --/
+
 theorem uni_cycle (l : Ltape) (r r' : Rtape) (xs : ℕ)
     (h : stride 0 uni_T r = some r') :
     lift (.right, Lsym.D :: Lsym.C1 :: Lsym.xs (xs + (uni_P + 1)) :: J ++ l, r) -[M]->*
       lift (.right, Lsym.D :: Lsym.C1 :: Lsym.xs (xs + 1) :: J ++ F ++ l, G ++ r') := by
+  unfold uni_T uni_P at h
+  unfold uni_P
   repeat'
     first
-    | refine (simple_step_spec _ _ (by rfl)).trans ?_
-    | (eapply consume_stride_segment_cps (h := by assumption)
-       · rfl
-       · omega
-       · intro u hu)
+    | exact (simple_step_spec _ _ rfl).trans (by assumption)
+    | apply consume_stride_segment_cps (h := h)
+      · rfl
+      · decide
+      · clear h
+        intro u h
 
 /-- `liftL` is congruent under a fixed prefix. -/
 lemma liftL_append_congr (p a b : Ltape) (hab : liftL a = liftL b) :
@@ -124,22 +130,21 @@ theorem uni_cycle' (l : Ltape) (r r' : Rtape) (xs : ℕ)
 /-
 Coq `uni_cycles`: iterate `uni_cycle'` `n+1` times.
 -/
+/- Increase recursion depth for Lean tactics used in proofs. -/
 theorem uni_cycles (n xs : ℕ) (l : Ltape) (r r' : Rtape)
     (h : stride 0 ((n + 1) * uni_T) r = some r') :
     lift (.right, Lsym.D :: Lsym.C1 :: Lsym.xs (xs + ((n + 1) * uni_P + 1)) :: J ++ l, r) -[M]->*
       lift (.right, Lsym.D :: Lsym.C1 :: Lsym.xs (xs + 1) :: J ++ Fls (n + 1) l,
         Grs (n + 1) r') := by
-  induction' n with n ih generalizing xs l r r' <;> simp_all +decide [ Nat.succ_mul ];
-  · convert uni_cycle' l r r' xs h using 1;
-  · obtain ⟨ t1, ht1, ht2 ⟩ := stride_add r r' 0 ( n * uni_T + uni_T ) uni_T h; specialize ih ( xs + uni_P ) l r t1; simp_all +decide [ Nat.add_comm, Nat.add_left_comm ] ;
-    have h_uni_cycle : lift (.right, Lsym.D :: Lsym.C1 :: Lsym.xs (xs + uni_P + 1) :: J ++ Fls (n + 1) l, Grs (n + 1) t1) -[M]->* lift (.right, Lsym.D :: Lsym.C1 :: Lsym.xs (xs + 1) :: J ++ Fls (n + 2) l, Grs (n + 2) r') := by
-      have := uni_cycle' ( Fls ( n + 1 ) l ) ( Grs ( n + 1 ) t1 ) ( Grs ( n + 1 ) r' ) xs; simp_all +decide [ Nat.add_comm, Nat.add_left_comm, Nat.add_assoc ] ;
-      convert this _ using 2;
-      · rw [ Fls_Fls, Grs_Grs ];
-        ring;
-      · convert stride_Grs t1 r' 0 ( n + 1 ) uni_T ht2 using 1;
-    simp_all +decide [ add_assoc, add_comm, add_left_comm, add_assoc ];
-    exact ih.trans h_uni_cycle
+  simp only [uni_T, uni_P] at h ⊢
+    repeat'
+    first
+    | exact (simple_step_spec _ _ rfl).trans (by assumption)
+    | apply consume_stride_segment_cps (h := h)
+    · rfl
+    · decide
+    · clear h
+     intro u h
 
 /-! ## The `uni_cycle_count` bound. -/
 
@@ -210,8 +215,8 @@ lemma try_uni_cycle_spec (c c' : conf) (h : try_uni_cycle c = some c') :
     exact ⟨ xs - ( ( n + 1 ) * uni_P + 1 ), by rw [ Nat.sub_add_cancel ( by nlinarith ) ] ⟩;
   convert uni_cycles n u l' r r' hr' using 1;
   · have := stripPrefix_spec J l l' hl'; aesop;
-  · simp +decide [ hu, Nat.add_sub_add_right ];
-    simp +decide [ add_assoc, Nat.add_sub_assoc ]
+  · simp +decide [hu];
+    simp +decide [Nat.add_sub_assoc]
 
 /-- Coq `fullstep`. -/
 def fullstep (c : conf) : Option conf :=
