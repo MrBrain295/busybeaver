@@ -62,6 +62,9 @@ def uni_T : ℕ := 4 * uni_P - 5
 
 /-! ## The universe-cycle theorem (Coq `uni_cycle`). -/
 
+set_option maxRecDepth 10000000
+set_option maxHeartbeats 0
+
 /-- Coq `uni_cycle`.  A single universe period: given a stride of length
 `uni_T` on the right tape, the configuration advances by consuming `uni_P` from
 the `l_xs` counter and appending one `F` on the left and one `G` on the right. --/
@@ -70,16 +73,15 @@ theorem uni_cycle (l : Ltape) (r r' : Rtape) (xs : ℕ)
     (h : stride 0 uni_T r = some r') :
     lift (.right, Lsym.D :: Lsym.C1 :: Lsym.xs (xs + (uni_P + 1)) :: J ++ l, r) -[M]->*
       lift (.right, Lsym.D :: Lsym.C1 :: Lsym.xs (xs + 1) :: J ++ F ++ l, G ++ r') := by
-  unfold uni_T uni_P at h
-  unfold uni_P
-  repeat'
+  norm_num [uni_T, uni_P] at h ⊢
+  repeat
     first
-    | exact (simple_step_spec _ _ rfl).trans (by assumption)
-    | apply consume_stride_segment_cps (h := h)
-      · rfl
-      · decide
-      · clear h
-        intro u h
+    | refine consume_stride_segment_cps
+        (hreduce := by norm_num [strideK, rxs]) (h := by assumption) (hm := by omega) ?_
+      intro u hu
+    | refine (simple_step_spec _ _ (by rfl)).trans ?_
+    | refine (stride_correct_0 _ _ _ (by assumption)).trans ?_
+    | exact Machine.EvStep.refl
 
 /-- `liftL` is congruent under a fixed prefix. -/
 lemma liftL_append_congr (p a b : Ltape) (hab : liftL a = liftL b) :
