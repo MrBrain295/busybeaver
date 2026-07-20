@@ -13,7 +13,7 @@ import Busybeaver.TM.Table.Parse
 import Busybeaver.Deciders.Skelet.ShiftOverflowBins
 import Busybeaver.Deciders.Skelet.Skelet17
 import Busybeaver.Deciders.Skelet.TapeCalc
-import Busybeaver.Deciders.Skelet.Skelet1Cycle
+import Busybeaver.Deciders.Skelet.Skelet1.Cycle
 
 /-- `evsteps t₁, …, tₙ` applies `n` consecutive single machine steps via
 `Machine.EvStep.step` and closes the chain with `Machine.EvStep.refl`. -/
