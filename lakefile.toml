@@ -46,11 +46,11 @@ root = "Main"
 name = "beaverKernel"
 root = "MainKernel"
 
-# Two interchangeable Skelet #1 proof backends. The fast target uses compiled
-# native evaluation; the kernel target imports the resumable checkpoint proof.
-[[lean_lib]]
-name = "Skelet1Fast"
+[[lean_exe]]
+name = "lazygen"
+root = "Busybeaver.Deciders.Skelet.Skelet1.Lazy.LazyGen"
 
+# Skelet #1 uses the resumable checkpoint proof checked by Lean's kernel.
 [[lean_lib]]
 name = "Skelet1Kernel"
 

@@ -1,5 +1,5 @@
 import BBTheorems.Common
-import Busybeaver.Deciders.Skelet.Skelet1Native
+import Busybeaver.Deciders.Skelet.Skelet1Kernel
 
 /-! # BB(5,2) = 47,176,870
 
@@ -7,9 +7,7 @@ import Busybeaver.Deciders.Skelet.Skelet1Native
 pipeline over the whole TNF enumeration (the same computation as
 `lake exe beaver 5 2 --verify`) — expect **hours** of single-module build time.
 
-This theorem intentionally selects the fast native-evaluation Skelet #1
-backend. The separately gated `Skelet1Kernel` target checks the same table
-proof using only kernel-checked checkpoints.
+The Skelet #1 table entry uses the kernel-checked checkpoint certificate.
 -/
 
 open TM TM.Table Pipeline
@@ -17,7 +15,7 @@ open TM TM.Table Pipeline
 namespace BBTheorems
 
 theorem bb5_spec : ResultSpec 4 1 47176869
-    (toTableDecider Deciders.Skelet.Skelet1.Native.backend bb5DefaultConfig) := by
+    (toTableDecider Deciders.Skelet.Skelet1.Kernel.backend bb5DefaultConfig) := by
   native_decide
 
 /-- `BB(5,2)` in the library convention (steps to the pre-halt configuration). -/

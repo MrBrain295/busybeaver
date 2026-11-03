@@ -32,20 +32,16 @@ Choose the check appropriate to your time and trust requirements:
 | Check | Command | What it establishes |
 | --- | --- | --- |
 | Fast CI scope | `lake build Busybeaver.CLI Busybeaver.Enumerate.Impl` | Elaborates the reusable verified implementation, without selecting the expensive Skelet #1 proof backend. |
-| Native Skelet #1 | `lake build Skelet1Fast` | Checks the complete Skelet #1 argument using Lean's compiled evaluator. A cold build took about 30 minutes on the development machine. |
 | Kernel-only Skelet #1 | `scripts/verify_skelet1.sh "$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)"` | Generates a deterministic, resumable certificate and checks it with the Lean kernel. This is intentionally very expensive. |
 | Concrete BB(5) value theorem | `lake build BBTheorems.BB5` | Runs the complete enumeration and decider pipeline and proves the value theorem. Expect hours; this uses `native_decide`. |
 
-Ordinary GitHub Actions run the fast scope. The separate
-[`skelet1-native.yml`](./.github/workflows/skelet1-native.yml) workflow runs the
-native Skelet #1 check nightly and on demand. See
-[Verification and trust](#verification-and-trust) below before interpreting
-these checks.
+Ordinary GitHub Actions run the fast scope. See [Verification and
+trust](#verification-and-trust) below before interpreting these checks.
 
 ## Using the executable
 
-The default `beaver` executable selects the native Skelet #1 backend. Its first
-build may therefore take roughly as long as `Skelet1Fast`.
+The default `beaver` executable selects the kernel-checked Skelet #1 backend.
+Its first build requires the generated certificate.
 
 ```bash
 lake exe beaver --help
@@ -204,24 +200,16 @@ hardcoded table's expensive certificates. No source proof is replaced by
 
 ### Skelet #1 verification backends
 
-The BB5 table, decider pipeline, and CLI share one implementation and accept a
-small proof-backend value for the expensive Skelet #1 non-halting theorem.
-Choose the backend through an explicit Lake target:
+The BB5 table, decider pipeline, and CLI share one implementation and use the
+kernel-checked Skelet #1 certificate for the expensive non-halting theorem:
 
 ```bash
-lake build Skelet1Fast       # compiled native evaluation
-lake build beaver            # CLI using the native backend
 scripts/verify_skelet1.sh 12 # generate and check the kernel-only certificate
+lake build beaver            # CLI using the kernel backend
 lake build beaverKernel      # kernel CLI, after the certificate is generated
 ```
 
-`Skelet1Fast` is suitable for routine verification and is run nightly (and on
-demand) by GitHub Actions. Its proof trusts Lean's native evaluator through the
-axiom introduced by `native_decide`, but contains no `sorry`. On the development
-machine used for this proof, a cold check took about 30 minutes; a cached build
-including the CLI link took under 4 seconds.
-
-`Skelet1Kernel` uses no native-evaluation axiom: it checks the generated,
+`Skelet1Kernel` uses no native-evaluation axiom or `native_decide`: it checks the generated,
 resumable checkpoint certificate using only Lean's kernel. A fresh run is
 intentionally very expensive; use `scripts/verify_skelet1.sh N` to verify it
 with `N` parallel workers and preserve completed checkpoints. The generated
